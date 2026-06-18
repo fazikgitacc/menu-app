@@ -48,7 +48,12 @@ async function handle(res) {
 function h(html) {
   const t = document.createElement('template');
   t.innerHTML = html.trim();
-  return t.content.firstElementChild;
+  // Шаблон с одним корнем — возвращаем его как есть.
+  if (t.content.children.length === 1) return t.content.firstElementChild;
+  // Несколько корневых узлов — оборачиваем, чтобы ничего не потерялось.
+  const wrap = document.createElement('div');
+  wrap.appendChild(t.content);
+  return wrap;
 }
 
 function esc(s) {
