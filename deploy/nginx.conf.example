@@ -1,0 +1,46 @@
+# Пример конфигурации Nginx (reverse proxy к Uvicorn).
+# Замените server_name и пути на свои. Файлы фронтенда отдаёт Nginx,
+# /api и /static проксируются в backend.
+
+server {
+    listen 80;
+    server_name menu.example.com;
+
+    client_max_body_size 12M;   # под загрузку картинок (MAX_IMAGE_MB)
+
+    # Статика фронтенда (SPA + PWA)
+    root /var/www/menu-app/frontend;
+    index index.html;
+
+    # PWA: service worker должен иметь scope "/", не кэшируем его жёстко
+    location = /service-worker.js {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # API -> Uvicorn
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;   # генерация картинок бывает долгой
+    }
+
+    # Загруженные/сгенерированные изображения -> Uvicorn (или отдавайте напрямую,
+    # если backend и Nginx на одной машине: alias /var/www/menu-app/backend/static/)
+    location /static/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+    }
+
+    # SPA-фолбэк
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+# После этого включите HTTPS через certbot:
+#   sudo certbot --nginx -d menu.example.com
+# и в backend/.env поставьте COOKIE_SECURE=true

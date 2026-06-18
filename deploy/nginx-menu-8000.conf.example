@@ -1,0 +1,50 @@
+# Сайт «Домашнее меню» на ОТДЕЛЬНОМ порту 8000 (HTTPS).
+# Декой-сайт на 80/443 не трогаем — он остаётся для маскировки.
+# Снаружи слушает nginx (8000 ssl), внутри проксирует на uvicorn (127.0.0.1:8001).
+#
+# Замените menu.example.com на свой домен и проверьте пути к сертификату.
+
+server {
+    listen 8000 ssl;
+    listen [::]:8000 ssl;
+    http2 on;
+    server_name menu.example.com;
+
+    # Сертификат: тот же домен, что и у декоя (Let's Encrypt).
+    # Если декой уже на HTTPS — эти файлы уже существуют, просто переиспользуем.
+    ssl_certificate     /etc/letsencrypt/live/menu.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/menu.example.com/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 12M;          # под загрузку картинок (MAX_IMAGE_MB)
+
+    root /var/www/menu-app/frontend;   # статика фронтенда (SPA + PWA)
+    index index.html;
+
+    location = /service-worker.js {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # API -> uvicorn на 8001 (8000 снаружи занят этим же nginx)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;       # генерация картинок бывает долгой
+    }
+
+    # Загруженные/сгенерированные изображения -> uvicorn
+    location /static/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host $host;
+    }
+
+    # SPA-фолбэк
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

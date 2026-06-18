@@ -1,0 +1,29 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Секреты и локальные данные (НИКОГДА не коммитим) ---
+backend/.env
+backend/menu.db
+backend/menu.db-journal
+backend/menu.db-wal
+backend/menu.db-shm
+
+# Сгенерированные/загруженные картинки — данные, не код
+backend/static/images/*
+!backend/static/images/.gitkeep
+
+# --- Артефакты сборки/упаковки ---
+*.zip
+*.tar.gz
+
+# --- ОС/редакторы ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Домашнее меню</title>
+  <meta name="description" content="Личное домашнее меню с подсчётом КБЖУ и генерацией изображений блюд." />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0d0f12" />
+  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Меню" />
+
+  <!-- Шрифт -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind через CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            ink:      '#0d0f12', // глубокий угольный фон
+            graphite: '#14171c',
+            card:     '#181b21',
+            cardhi:   '#1f232b',
+            line:     '#272b33',
+            accent:   '#e3bd84', // тёплое золото
+            accentdim:'#a98b5e',
+            muted:    '#8b9099',
+            prot:     '#5ec8a8', // белки
+            fat:      '#e6b260', // жиры
+            carb:     '#6aa8e6', // углеводы
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'] },
+          boxShadow: { soft: '0 18px 50px -20px rgba(0,0,0,0.7)' },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #0d0f12; }
+    body { -webkit-tap-highlight-color: transparent; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .safe-b { padding-bottom: calc(env(safe-area-inset-bottom) + 1rem); }
+    .safe-t { padding-top: env(safe-area-inset-top); }
+    @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .fadein { animation: fadein .25s ease both; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin .9s linear infinite; }
+    @media (prefers-reduced-motion: reduce) { .fadein, .spin { animation: none; } }
+    /* плавный скролл рецепта */
+    .recipe { white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body class="bg-ink text-gray-100 font-sans min-h-screen antialiased">
+  <div id="root"></div>
+  <div id="modal-root"></div>
+  <div id="toast-root" class="fixed top-3 left-1/2 -translate-x-1/2 z-[120] flex flex-col items-center gap-2 px-3 w-full max-w-sm"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
