@@ -1,9 +1,27 @@
-"""Генерация изображений блюд через Hugging Face Inference API."""
+"""Генерация изображений блюд через Pollinations.ai (бесплатный Flux).
+
+Pollinations принимает промпт прямо в пути GET-запроса и возвращает байты
+картинки. API-ключ для бесплатного режима не нужен. При желании поведение
+настраивается переменными окружения (все опциональны):
+  POLLINATIONS_MODEL  — модель (по умолчанию "flux")
+  IMAGE_WIDTH / IMAGE_HEIGHT — размер картинки (по умолчанию 768)
+  POLLINATIONS_KEY    — ключ для повышенных лимитов (необязателен)
+  POLLINATIONS_BASE   — базовый URL эндпоинта (на случай переезда)
+"""
 import asyncio
+import os
+import random
+from urllib.parse import quote
 
 import httpx
 
-import config
+POLLINATIONS_BASE = os.getenv(
+    "POLLINATIONS_BASE", "https://image.pollinations.ai/prompt/"
+)
+POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux")
+POLLINATIONS_KEY = os.getenv("POLLINATIONS_KEY", "")
+IMAGE_WIDTH = int(os.getenv("IMAGE_WIDTH", "768"))
+IMAGE_HEIGHT = int(os.getenv("IMAGE_HEIGHT", "768"))
 
 
 def build_prompt(title: str, description: str | None) -> str:
@@ -19,26 +37,29 @@ def build_prompt(title: str, description: str | None) -> str:
 
 
 async def generate_image_bytes(prompt: str) -> bytes:
-    """Делает запрос к HF и возвращает байты PNG/JPEG.
+    """Запрашивает картинку у Pollinations и возвращает её байты.
 
     Кидает RuntimeError с понятным текстом при любой ошибке.
     """
-    if not config.HF_API_TOKEN:
-        raise RuntimeError(
-            "HF_API_TOKEN не задан. Укажите токен Hugging Face в .env."
-        )
-
-    headers = {
-        "Authorization": f"Bearer {config.HF_API_TOKEN}",
-        "Accept": "image/png",
+    url = POLLINATIONS_BASE + quote(prompt, safe="")
+    params = {
+        "model": POLLINATIONS_MODEL,
+        "width": IMAGE_WIDTH,
+        "height": IMAGE_HEIGHT,
+        "nologo": "true",
+        # случайный seed — чтобы повторная генерация давала новую картинку
+        "seed": random.randint(1, 2_000_000_000),
     }
-    payload = {"inputs": prompt, "options": {"wait_for_model": True}}
+    if POLLINATIONS_KEY:
+        params["key"] = POLLINATIONS_KEY
 
     last_error = "неизвестная ошибка"
-    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
-        for attempt in range(4):
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(180.0), follow_redirects=True
+    ) as client:
+        for attempt in range(3):
             try:
-                resp = await client.post(config.HF_API_URL, headers=headers, json=payload)
+                resp = await client.get(url, params=params)
             except httpx.RequestError as exc:
                 last_error = f"сеть недоступна: {exc}"
                 await asyncio.sleep(3)
@@ -48,16 +69,13 @@ async def generate_image_bytes(prompt: str) -> bytes:
             if resp.status_code == 200 and content_type.startswith("image"):
                 return resp.content
 
-            # 503 — модель ещё прогревается на стороне HF, ждём и пробуем снова.
-            if resp.status_code == 503:
-                last_error = "модель прогревается на стороне Hugging Face"
-                await asyncio.sleep(8)
+            # Временная перегрузка/лимит — ждём и пробуем снова.
+            if resp.status_code in (429, 500, 502, 503, 504):
+                last_error = f"сервис перегружен (HTTP {resp.status_code})"
+                await asyncio.sleep(5)
                 continue
 
-            try:
-                last_error = resp.json().get("error", resp.text)
-            except Exception:
-                last_error = resp.text[:300]
+            last_error = (resp.text or "").strip()[:300] or f"HTTP {resp.status_code}"
             break
 
     raise RuntimeError(f"Не удалось сгенерировать изображение: {last_error}")
