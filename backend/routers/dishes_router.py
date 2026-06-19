@@ -106,6 +106,53 @@ async def create_dish(
     return dish
 
 
+@router.put("/{dish_id}", response_model=schemas.DishOut)
+async def update_dish(
+    dish_id: int,
+    title: str = Form(...),
+    description: Optional[str] = Form(None),
+    category: str = Form("Обед"),
+    calories: float = Form(0),
+    proteins: float = Form(0),
+    fats: float = Form(0),
+    carbohydrates: float = Form(0),
+    recipe_text_or_link: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    image_path: Optional[str] = Form(None),
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    dish = _get_owned_dish(dish_id, user, db)
+    if category not in config.CATEGORIES:
+        category = dish.category
+
+    # Картинку меняем только если прислали новую (файл или сгенерированный путь),
+    # иначе оставляем прежнюю.
+    new_path: Optional[str] = None
+    if image is not None and image.filename:
+        new_path = await storage.save_upload(image)
+    elif image_path:
+        new_path = storage.adopt_existing(image_path)
+
+    if new_path:
+        old_path = dish.image_path
+        dish.image_path = new_path
+        storage.remove_image(old_path)
+
+    dish.title = title.strip()
+    dish.description = description or None
+    dish.category = category
+    dish.calories = calories or 0
+    dish.proteins = proteins or 0
+    dish.fats = fats or 0
+    dish.carbohydrates = carbohydrates or 0
+    dish.recipe_text_or_link = recipe_text_or_link or None
+
+    db.commit()
+    db.refresh(dish)
+    return dish
+
+
 @router.delete("/{dish_id}", response_model=schemas.MessageOut)
 def delete_dish(
     dish_id: int,
@@ -127,10 +174,13 @@ async def generate_dish_image(
 ):
     dish = _get_owned_dish(dish_id, user, db)
     prompt = ai.build_prompt(dish.title, dish.description)
-    img_bytes = await ai.generate_image_bytes(prompt)
+    try:
+        img_bytes, ext = await ai.generate_image_bytes(prompt)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
     old_path = dish.image_path
-    dish.image_path = storage.save_bytes(img_bytes, ".png")
+    dish.image_path = storage.save_bytes(img_bytes, ext)
     db.commit()
     db.refresh(dish)
 
@@ -146,6 +196,9 @@ async def generate_preview(
 ):
     """Генерация картинки для ещё не сохранённого блюда (экран добавления)."""
     prompt = ai.build_prompt(title.strip(), description)
-    img_bytes = await ai.generate_image_bytes(prompt)
-    path = storage.save_bytes(img_bytes, ".png")
+    try:
+        img_bytes, ext = await ai.generate_image_bytes(prompt)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    path = storage.save_bytes(img_bytes, ext)
     return schemas.GeneratedImageOut(image_path=path)

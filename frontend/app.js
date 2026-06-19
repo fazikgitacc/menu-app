@@ -106,6 +106,7 @@ const ICON = {
 };
 // Чистый «искрящийся» значок генерации (без артефактов).
 ICON.spark = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 3l1.7 4.6L18.5 9l-4.8 1.4L12 15l-1.7-4.6L5.5 9l4.8-1.4L12 3z"/><path d="M19 13l.7 1.9 1.9.7-1.9.7L19 19l-.7-1.8-1.9-.7 1.9-.7.7-1.8z"/></svg>';
+ICON.edit = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
 
 /* ------------------------- Глобальный лоадер ---------------------------- */
 function showLoader(text) {
@@ -148,7 +149,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal
 function modalShell(innerHTML) {
   return h(`
     <div class="fadein relative w-full sm:max-w-4xl bg-graphite sm:rounded-2xl border border-line shadow-soft min-h-screen sm:min-h-0">
-      <button data-close class="absolute top-4 right-4 z-10 w-9 h-9 grid place-items-center rounded-full bg-ink/70 border border-line text-muted hover:text-white">${ICON.close}</button>
+      <button data-close style="top: calc(env(safe-area-inset-top) + 0.75rem)" class="absolute right-4 z-10 w-9 h-9 grid place-items-center rounded-full bg-ink/70 border border-line text-muted hover:text-white">${ICON.close}</button>
       ${innerHTML}
     </div>`);
 }
@@ -234,7 +235,7 @@ function renderApp() {
   const view = h(`
     <div class="max-w-6xl mx-auto px-4 sm:px-6 pb-28">
       <!-- Шапка -->
-      <header class="safe-t sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 bg-ink/85 backdrop-blur-md border-b border-line/60">
+      <header style="padding-top: calc(env(safe-area-inset-top) + 1rem)" class="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 pb-4 bg-ink/85 backdrop-blur-md border-b border-line/60">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <span class="text-accent">${ICON.spark}</span>
@@ -264,7 +265,7 @@ function renderApp() {
     </div>
 
     <!-- Кнопка добавления -->
-    <div class="fixed bottom-0 inset-x-0 z-40 px-4 sm:px-6 pb-4 pt-6 bg-gradient-to-t from-ink via-ink/90 to-transparent safe-b">
+    <div style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)" class="fixed bottom-0 inset-x-0 z-40 px-4 sm:px-6 pt-6 bg-gradient-to-t from-ink via-ink/90 to-transparent">
       <div class="max-w-6xl mx-auto">
         <button id="add-btn" class="w-full py-4 rounded-2xl bg-accent text-ink font-semibold text-sm shadow-soft hover:bg-[#eecb96] transition flex items-center justify-center gap-2">
           <span class="w-5 h-5 inline-block">${ICON.plus}</span> Добавить новое блюдо
@@ -277,7 +278,7 @@ function renderApp() {
   renderTabs();
   renderGrid();
 
-  view.querySelector('#add-btn').addEventListener('click', openAddModal);
+  view.querySelector('#add-btn').addEventListener('click', () => openAddModal());
   view.querySelector('#random-btn').addEventListener('click', openRandomModal);
   view.querySelector('#profile-btn').addEventListener('click', openProfileModal);
 }
@@ -329,13 +330,8 @@ function dishCard(dish) {
             ? `<img src="${esc(dish.image_path)}" alt="${esc(dish.title)}" loading="lazy" class="w-full h-full object-cover" />`
             : `<div class="absolute inset-0 flex flex-col items-center justify-center text-center px-3">
                  <div class="w-9 h-9 rounded-full border border-line grid place-items-center text-muted mb-2">${ICON.image}</div>
-                 <p class="text-[11px] leading-tight text-muted/80">Генерируем картинку блюда</p>
+                 <p class="text-[11px] leading-tight text-muted/80">Нет фото</p>
                </div>`
-        }
-        ${
-          !hasImg
-            ? `<button data-gen class="absolute top-2 right-2 w-8 h-8 grid place-items-center rounded-full bg-accent text-ink shadow hover:bg-[#eecb96] transition" title="Сгенерировать изображение"><span class="w-4 h-4">${ICON.plus}</span></button>`
-            : ''
         }
         <!-- Плашка с названием -->
         <div class="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
@@ -441,6 +437,9 @@ function openDetailModal(dish) {
       <div class="p-5 sm:p-6 space-y-4">
         ${macrosBlock(dish)}
         ${recipeBlock(dish.recipe_text_or_link)}
+        <button data-edit class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition">
+          ${ICON.edit} Редактировать
+        </button>
         <button data-delete class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-[#5b2630] text-red-300 text-sm hover:bg-[#2a1518] transition">
           ${ICON.trash} Удалить блюдо
         </button>
@@ -471,17 +470,27 @@ function openDetailModal(dish) {
     }
   });
 
+  node.querySelector('[data-edit]').addEventListener('click', () => {
+    closeModal();
+    openAddModal(dish);
+  });
+
   openModal(node);
 }
 
 /* ============================ ДОБАВЛЕНИЕ БЛЮДА =========================== */
-function openAddModal() {
-  // Состояние картинки внутри формы добавления.
+function openAddModal(dish = null) {
+  const isEdit = !!dish;
+  // Состояние картинки внутри формы.
   const img = { file: null, previewUrl: null, generatedPath: null };
 
+  const selectedCat = (isEdit && dish.category) ? dish.category : 'Обед';
   const catOptions = CATEGORIES
-    .map((c) => `<option value="${c}"${c === 'Обед' ? ' selected' : ''}>${c}</option>`)
+    .map((c) => `<option value="${c}"${c === selectedCat ? ' selected' : ''}>${c}</option>`)
     .join('');
+
+  // Значение поля для предзаполнения при редактировании.
+  const v = (key) => (isEdit && dish[key] != null ? esc(String(dish[key])) : '');
 
   const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
 
@@ -503,9 +512,10 @@ function openAddModal() {
 
       <!-- Поля ввода (на месте инфо-блока) -->
       <div class="p-5 sm:p-6 space-y-3 max-h-[80vh] md:max-h-[80vh] overflow-y-auto no-scrollbar">
+        <p class="text-base font-semibold mb-1">${isEdit ? 'Редактировать блюдо' : 'Новое блюдо'}</p>
         <div>
           <label class="text-xs text-muted mb-1 block">Название</label>
-          <input name="title" required placeholder="Например, Паста карбонара" class="${fieldCls}" />
+          <input name="title" required placeholder="Например, Паста карбонара" value="${v('title')}" class="${fieldCls}" />
         </div>
         <div>
           <label class="text-xs text-muted mb-1 block">Категория</label>
@@ -513,28 +523,28 @@ function openAddModal() {
         </div>
         <div>
           <label class="text-xs text-muted mb-1 block">Описание</label>
-          <textarea name="description" rows="2" placeholder="Короткое описание" class="${fieldCls} resize-none"></textarea>
+          <textarea name="description" rows="2" placeholder="Короткое описание" class="${fieldCls} resize-none">${v('description')}</textarea>
         </div>
 
         <div class="rounded-2xl bg-card border border-line p-4">
           <p class="text-xs uppercase tracking-wider text-muted mb-3">КБЖУ на порцию</p>
           <div class="mb-3">
             <label class="text-xs text-muted mb-1 block">Калории, ккал</label>
-            <input name="calories" inputmode="decimal" placeholder="0" class="${fieldCls}" />
+            <input name="calories" inputmode="decimal" placeholder="0" value="${v('calories')}" class="${fieldCls}" />
           </div>
           <div class="grid grid-cols-3 gap-2">
-            <div><label class="text-xs text-prot mb-1 block">Белки</label><input name="proteins" inputmode="decimal" placeholder="0" class="${fieldCls}" /></div>
-            <div><label class="text-xs text-fat mb-1 block">Жиры</label><input name="fats" inputmode="decimal" placeholder="0" class="${fieldCls}" /></div>
-            <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input name="carbohydrates" inputmode="decimal" placeholder="0" class="${fieldCls}" /></div>
+            <div><label class="text-xs text-prot mb-1 block">Белки</label><input name="proteins" inputmode="decimal" placeholder="0" value="${v('proteins')}" class="${fieldCls}" /></div>
+            <div><label class="text-xs text-fat mb-1 block">Жиры</label><input name="fats" inputmode="decimal" placeholder="0" value="${v('fats')}" class="${fieldCls}" /></div>
+            <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input name="carbohydrates" inputmode="decimal" placeholder="0" value="${v('carbohydrates')}" class="${fieldCls}" /></div>
           </div>
         </div>
 
         <div>
           <label class="text-xs text-muted mb-1 block">Рецепт или ссылка</label>
-          <textarea name="recipe_text_or_link" rows="4" placeholder="Текст рецепта или ссылка https://…" class="${fieldCls} resize-none"></textarea>
+          <textarea name="recipe_text_or_link" rows="4" placeholder="Текст рецепта или ссылка https://…" class="${fieldCls} resize-none">${v('recipe_text_or_link')}</textarea>
         </div>
 
-        <button type="submit" id="save-dish" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Сохранить блюдо</button>
+        <button type="submit" id="save-dish" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">${isEdit ? 'Сохранить изменения' : 'Сохранить блюдо'}</button>
       </div>
     </form>`;
 
@@ -563,6 +573,9 @@ function openAddModal() {
 
   node.querySelector('#pick-img').addEventListener('click', () => fileInput.click());
   resetBtn.addEventListener('click', resetImage);
+
+  // В режиме редактирования показываем текущую картинку (остаётся, если её не заменить).
+  if (isEdit && dish.image_path) showPreview(dish.image_path);
 
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0];
@@ -611,18 +624,23 @@ function openAddModal() {
     else if (img.generatedPath) fd.append('image_path', img.generatedPath);
 
     const btn = node.querySelector('#save-dish');
+    const saveLabel = isEdit ? 'Сохранить изменения' : 'Сохранить блюдо';
     btn.disabled = true; btn.textContent = 'Сохраняем…';
     try {
-      await apiForm('/api/dishes', fd);
+      if (isEdit) {
+        await apiForm(`/api/dishes/${dish.id}`, fd, 'PUT');
+      } else {
+        await apiForm('/api/dishes', fd);
+        state.category = 'Все';
+        renderTabs();
+      }
       closeModal();
-      state.category = 'Все';
-      renderTabs();
       await loadDishes();
       renderGrid();
-      toast('Блюдо добавлено', 'success');
+      toast(isEdit ? 'Блюдо обновлено' : 'Блюдо добавлено', 'success');
     } catch (err) {
       toast(err.message, 'error');
-      btn.disabled = false; btn.textContent = 'Сохранить блюдо';
+      btn.disabled = false; btn.textContent = saveLabel;
     }
   });
 
