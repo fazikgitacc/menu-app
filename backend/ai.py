@@ -36,8 +36,18 @@ def build_prompt(title: str, description: str | None) -> str:
     return prompt
 
 
-async def generate_image_bytes(prompt: str) -> bytes:
-    """Запрашивает картинку у Pollinations и возвращает её байты.
+def _ext_from_content_type(content_type: str) -> str:
+    """Расширение файла по content-type ответа."""
+    ct = (content_type or "").lower()
+    if "png" in ct:
+        return ".png"
+    if "webp" in ct:
+        return ".webp"
+    return ".jpg"  # Pollinations по умолчанию отдаёт JPEG
+
+
+async def generate_image_bytes(prompt: str) -> tuple[bytes, str]:
+    """Запрашивает картинку у Pollinations и возвращает (байты, расширение).
 
     Кидает RuntimeError с понятным текстом при любой ошибке.
     """
@@ -67,7 +77,7 @@ async def generate_image_bytes(prompt: str) -> bytes:
 
             content_type = resp.headers.get("content-type", "")
             if resp.status_code == 200 and content_type.startswith("image"):
-                return resp.content
+                return resp.content, _ext_from_content_type(content_type)
 
             # Временная перегрузка/лимит — ждём и пробуем снова.
             if resp.status_code in (429, 500, 502, 503, 504):
