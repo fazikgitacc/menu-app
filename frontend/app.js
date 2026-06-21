@@ -11,6 +11,8 @@ const state = {
   user: null,
   dishes: [],
   category: 'Все',
+  tab: 'menu',          // 'menu' | 'diary'
+  menuMode: 'dishes',   // 'dishes' | 'products'
 };
 
 /* ----------------------------- API-обёртки ------------------------------ */
@@ -107,6 +109,9 @@ const ICON = {
 // Чистый «искрящийся» значок генерации (без артефактов).
 ICON.spark = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 3l1.7 4.6L18.5 9l-4.8 1.4L12 15l-1.7-4.6L5.5 9l4.8-1.4L12 3z"/><path d="M19 13l.7 1.9 1.9.7-1.9.7L19 19l-.7-1.8-1.9-.7 1.9-.7.7-1.8z"/></svg>';
 ICON.edit = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+ICON.grid = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-full h-full"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="8" rx="1.6"/><rect x="3" y="13" width="8" height="8" rx="1.6"/><rect x="13" y="13" width="8" height="8" rx="1.6"/></svg>';
+ICON.book = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M5 4a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2z"/><path d="M9 7h6M9 11h6"/></svg>';
+ICON.barcode = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" class="w-5 h-5"><path d="M4 6v12M7.5 6v12M11 6v12M14 6v12M17 6v12M20 6v12"/></svg>';
 
 /* ------------------------- Глобальный лоадер ---------------------------- */
 function showLoader(text) {
@@ -232,10 +237,54 @@ function renderApp() {
   const root = document.getElementById('root');
   root.innerHTML = '';
 
-  const view = h(`
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 pb-28">
-      <!-- Шапка -->
-      <header style="padding-top: calc(env(safe-area-inset-top) + 1rem)" class="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 pb-4 bg-ink/85 backdrop-blur-md border-b border-line/60">
+  if (state.tab === 'diary') {
+    root.appendChild(diaryView());
+  } else {
+    root.appendChild(menuView());
+    if (state.menuMode === 'dishes') { renderTabs(); renderGrid(); }
+    wireMenu(root);
+  }
+
+  root.appendChild(navBar());
+  wireNav(root);
+}
+
+/* --------------------------- Экран «Меню» ------------------------------- */
+function menuView() {
+  const isProducts = state.menuMode === 'products';
+
+  const segBtn = (mode, label) => `
+    <button data-mode="${mode}" class="flex-1 py-2 rounded-lg text-sm font-medium transition ${
+      state.menuMode === mode ? 'bg-card text-white' : 'text-muted hover:text-white'
+    }">${label}</button>`;
+
+  const body = isProducts
+    ? `<div class="mt-8 text-center text-muted py-16">
+         <div class="w-14 h-14 mx-auto rounded-2xl border border-line grid place-items-center mb-4 text-accent">${ICON.barcode}</div>
+         <p class="text-base text-gray-200">Пока нет продуктов</p>
+         <p class="text-sm mt-1 text-muted/80 max-w-xs mx-auto">Продукты из трекера будут появляться здесь — добавим в следующем обновлении.</p>
+       </div>`
+    : `<button id="random-btn" class="mt-5 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-accent/40 bg-accent/10 text-accent font-medium text-sm hover:bg-accent/15 transition">
+         ${ICON.dice}<span>Что приготовить? <span class="text-accent/70">Случайный выбор</span></span>
+       </button>
+       <main id="grid" class="mt-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4"></main>
+       <div id="empty" class="hidden text-center text-muted py-20">
+         <p class="text-base">Здесь пока пусто</p>
+         <p class="text-sm mt-1 text-muted/70">Добавьте первое блюдо кнопкой ниже</p>
+       </div>`;
+
+  const addBtn = isProducts ? '' : `
+    <div style="bottom: calc(env(safe-area-inset-bottom) + 4.5rem)" class="fixed inset-x-0 z-40 px-4 sm:px-6 pt-6 pb-2 bg-gradient-to-t from-ink via-ink/90 to-transparent pointer-events-none">
+      <div class="max-w-6xl mx-auto pointer-events-auto">
+        <button id="add-btn" class="w-full py-4 rounded-2xl bg-accent text-ink font-semibold text-sm shadow-soft hover:bg-[#eecb96] transition flex items-center justify-center gap-2">
+          <span class="w-5 h-5 inline-block">${ICON.plus}</span> Добавить новое блюдо
+        </button>
+      </div>
+    </div>`;
+
+  return h(`
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 pb-44">
+      <header style="padding-top: calc(env(safe-area-inset-top) + 1rem)" class="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 pb-3 bg-ink/85 backdrop-blur-md border-b border-line/60">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <span class="text-accent">${ICON.spark}</span>
@@ -247,40 +296,85 @@ function renderApp() {
           </button>
         </div>
 
-        <!-- Табы категорий -->
-        <div id="tabs" class="mt-4 flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1"></div>
+        <!-- Переключатель Блюда / Продукты -->
+        <div class="mt-3 flex gap-1 p-1 rounded-xl bg-ink border border-line">
+          ${segBtn('dishes', 'Блюда')}${segBtn('products', 'Продукты')}
+        </div>
+
+        ${isProducts ? '' : `<div id="tabs" class="mt-3 flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1"></div>`}
       </header>
 
-      <!-- Случайный выбор -->
-      <button id="random-btn" class="mt-5 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-accent/40 bg-accent/10 text-accent font-medium text-sm hover:bg-accent/15 transition">
-        ${ICON.dice}<span>Что приготовить? <span class="text-accent/70">Случайный выбор</span></span>
-      </button>
-
-      <!-- Сетка блюд -->
-      <main id="grid" class="mt-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4"></main>
-      <div id="empty" class="hidden text-center text-muted py-20">
-        <p class="text-base">Здесь пока пусто</p>
-        <p class="text-sm mt-1 text-muted/70">Добавьте первое блюдо кнопкой ниже</p>
-      </div>
+      ${body}
     </div>
+    ${addBtn}`);
+}
 
-    <!-- Кнопка добавления -->
-    <div style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)" class="fixed bottom-0 inset-x-0 z-40 px-4 sm:px-6 pt-6 bg-gradient-to-t from-ink via-ink/90 to-transparent">
-      <div class="max-w-6xl mx-auto">
-        <button id="add-btn" class="w-full py-4 rounded-2xl bg-accent text-ink font-semibold text-sm shadow-soft hover:bg-[#eecb96] transition flex items-center justify-center gap-2">
-          <span class="w-5 h-5 inline-block">${ICON.plus}</span> Добавить новое блюдо
-        </button>
+function wireMenu(root) {
+  root.querySelectorAll('[data-mode]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const m = b.getAttribute('data-mode');
+      if (state.menuMode === m) return;
+      state.menuMode = m;
+      renderApp();
+    });
+  });
+  const addBtn = root.querySelector('#add-btn');
+  if (addBtn) addBtn.addEventListener('click', () => openAddModal());
+  const randomBtn = root.querySelector('#random-btn');
+  if (randomBtn) randomBtn.addEventListener('click', openRandomModal);
+  root.querySelector('#profile-btn').addEventListener('click', openProfileModal);
+}
+
+/* -------------------------- Экран «Дневник» ----------------------------- */
+function diaryView() {
+  const today = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  return h(`
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 pb-28">
+      <header style="padding-top: calc(env(safe-area-inset-top) + 1rem)" class="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 pb-3 bg-ink/85 backdrop-blur-md border-b border-line/60">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-accent w-6 h-6 inline-block">${ICON.book}</span>
+            <h1 class="text-lg font-semibold tracking-tight">Дневник</h1>
+          </div>
+          <span class="text-sm text-muted capitalize">${esc(today)}</span>
+        </div>
+      </header>
+
+      <div class="mt-10 text-center text-muted py-16">
+        <div class="w-14 h-14 mx-auto rounded-2xl border border-line grid place-items-center mb-4 text-accent"><span class="w-6 h-6 inline-block">${ICON.book}</span></div>
+        <p class="text-base text-gray-200">Дневник питания скоро</p>
+        <p class="text-sm mt-1 text-muted/80 max-w-xs mx-auto">Здесь появятся приёмы пищи, вода, цель КБЖУ и календарь. Добавляем в следующих обновлениях.</p>
       </div>
     </div>`);
+}
 
-  root.appendChild(view);
+/* --------------------------- Нижняя навигация --------------------------- */
+function navBar() {
+  const tabBtn = (id, icon, label) => `
+    <button data-tab="${id}" class="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 ${
+      state.tab === id ? 'text-accent' : 'text-muted hover:text-white'
+    } transition">
+      <span class="w-6 h-6">${icon}</span>
+      <span class="text-[11px] font-medium">${label}</span>
+    </button>`;
+  return h(`
+    <nav style="padding-bottom: env(safe-area-inset-bottom)" class="fixed bottom-0 inset-x-0 z-50 bg-graphite/95 backdrop-blur-md border-t border-line">
+      <div class="max-w-6xl mx-auto flex">
+        ${tabBtn('menu', ICON.grid, 'Меню')}
+        ${tabBtn('diary', ICON.book, 'Дневник')}
+      </div>
+    </nav>`);
+}
 
-  renderTabs();
-  renderGrid();
-
-  view.querySelector('#add-btn').addEventListener('click', () => openAddModal());
-  view.querySelector('#random-btn').addEventListener('click', openRandomModal);
-  view.querySelector('#profile-btn').addEventListener('click', openProfileModal);
+function wireNav(root) {
+  root.querySelectorAll('[data-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const t = btn.getAttribute('data-tab');
+      if (state.tab === t) return;
+      state.tab = t;
+      renderApp();
+    });
+  });
 }
 
 function renderTabs() {

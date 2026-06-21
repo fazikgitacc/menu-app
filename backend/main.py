@@ -1,18 +1,14 @@
-"""Точка входа FastAPI. Запуск:  cd backend && uvicorn main:app --reload"""
+"""Точка входа FastAPI. Запуск:  cd backend && alembic upgrade head && uvicorn main:app --reload"""
 import os
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 import config
-import models  # noqa: F401  (нужно, чтобы таблицы зарегистрировались)
-from database import Base, engine
 from routers import auth_router, dishes_router
 
-# Создаём таблицы при старте (для SQLite этого достаточно).
-Base.metadata.create_all(bind=engine)
-
-app = FastAPI(title="Домашнее меню", version="1.0.0")
+# Схема БД управляется Alembic (`alembic upgrade head`), а не create_all.
+app = FastAPI(title="Домашнее меню", version="1.1.0")
 
 # API-роутеры регистрируем ДО монтирования статики на "/".
 app.include_router(auth_router.router)
