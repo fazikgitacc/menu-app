@@ -13,6 +13,8 @@ const state = {
   category: 'Все',
   tab: 'menu',          // 'menu' | 'diary'
   menuMode: 'dishes',   // 'dishes' | 'products'
+  diaryDate: null,      // 'YYYY-MM-DD'
+  day: null,            // загруженные данные дня
 };
 
 /* ----------------------------- API-обёртки ------------------------------ */
@@ -112,6 +114,10 @@ ICON.edit = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 ICON.grid = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-full h-full"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="8" rx="1.6"/><rect x="3" y="13" width="8" height="8" rx="1.6"/><rect x="13" y="13" width="8" height="8" rx="1.6"/></svg>';
 ICON.book = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M5 4a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2z"/><path d="M9 7h6M9 11h6"/></svg>';
 ICON.barcode = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" class="w-5 h-5"><path d="M4 6v12M7.5 6v12M11 6v12M14 6v12M17 6v12M20 6v12"/></svg>';
+ICON.drop = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" class="w-full h-full"><path d="M12 3s6 6.6 6 11a6 6 0 1 1-12 0c0-4.4 6-11 6-11z"/></svg>';
+ICON.target = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-full h-full"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/></svg>';
+ICON.chevL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M15 6l-6 6 6 6"/></svg>';
+ICON.chevR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M9 6l6 6-6 6"/></svg>';
 
 /* ------------------------- Глобальный лоадер ---------------------------- */
 function showLoader(text) {
@@ -239,6 +245,7 @@ function renderApp() {
 
   if (state.tab === 'diary') {
     root.appendChild(diaryView());
+    wireDiary(root);
   } else {
     root.appendChild(menuView());
     if (state.menuMode === 'dishes') { renderTabs(); renderGrid(); }
@@ -326,26 +333,419 @@ function wireMenu(root) {
 }
 
 /* -------------------------- Экран «Дневник» ----------------------------- */
+const MEALS = [
+  { id: 'breakfast', label: 'Завтрак' },
+  { id: 'lunch', label: 'Обед' },
+  { id: 'dinner', label: 'Ужин' },
+  { id: 'snack', label: 'Перекус' },
+];
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function shiftDate(str, delta) {
+  const [y, m, d] = str.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + delta);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+function dateLabel(str) {
+  const t = todayStr();
+  if (str === t) return 'Сегодня';
+  if (str === shiftDate(t, -1)) return 'Вчера';
+  if (str === shiftDate(t, 1)) return 'Завтра';
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+}
+
+async function loadDay() {
+  if (!state.diaryDate) state.diaryDate = todayStr();
+  try {
+    state.day = await api(`/api/tracker/day?date=${state.diaryDate}`);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+async function reloadDay() {
+  await loadDay();
+  renderApp();
+}
+
+function progressBar(value, target, colorCls) {
+  const pct = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
+  return `<div class="h-1.5 rounded-full bg-line/80 overflow-hidden"><div class="h-full ${colorCls} rounded-full" style="width:${pct}%"></div></div>`;
+}
+
 function diaryView() {
-  const today = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  const day = state.day || { totals: { calories: 0, proteins: 0, fats: 0, carbohydrates: 0 }, water_ml: 0, goal: null, meals: {} };
+  const goal = day.goal;
+  const t = day.totals;
+
+  // Сводка по калориям
+  const goalCal = goal?.target_calories || 0;
+  const remaining = Math.round(goalCal - t.calories);
+  const summary = goalCal > 0
+    ? `<div class="flex items-end justify-between mb-2">
+         <div>
+           <p class="text-3xl font-semibold ${remaining < 0 ? 'text-red-300' : 'text-white'}">${fmt(Math.abs(remaining))}</p>
+           <p class="text-xs text-muted mt-0.5">${remaining < 0 ? 'превышение, ккал' : 'осталось, ккал'}</p>
+         </div>
+         <p class="text-sm text-muted">${fmt(t.calories)} / ${fmt(goalCal)}</p>
+       </div>
+       ${progressBar(t.calories, goalCal, remaining < 0 ? 'bg-red-400' : 'bg-accent')}`
+    : `<div class="flex items-end justify-between mb-2">
+         <div><p class="text-3xl font-semibold text-white">${fmt(t.calories)}</p><p class="text-xs text-muted mt-0.5">ккал съедено</p></div>
+         <button data-goal class="text-sm text-accent border border-accent/40 rounded-full px-3 py-1.5">Задать цель</button>
+       </div>`;
+
+  const macro = (label, val, target, cls) => `
+    <div>
+      <div class="flex justify-between text-xs mb-1"><span class="${cls}">${label}</span><span class="text-muted">${fmt(val)}${target ? ` / ${fmt(target)}` : ''} г</span></div>
+      ${progressBar(val, target || val || 1, cls.replace('text-', 'bg-'))}
+    </div>`;
+
+  const macros = `
+    <div class="grid grid-cols-3 gap-3 mt-4">
+      ${macro('Белки', t.proteins, goal?.target_proteins, 'text-prot')}
+      ${macro('Жиры', t.fats, goal?.target_fats, 'text-fat')}
+      ${macro('Углеводы', t.carbohydrates, goal?.target_carbohydrates, 'text-carb')}
+    </div>`;
+
+  // Вода
+  const waterGoal = goal?.target_water_ml || 2000;
+  const water = `
+    <section class="rounded-2xl bg-card border border-line p-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-carb w-5 h-5 inline-block">${ICON.drop}</span><h3 class="text-sm font-medium">Вода</h3></div>
+        <p class="text-sm text-muted">${fmt(day.water_ml)} / ${fmt(waterGoal)} мл</p>
+      </div>
+      ${progressBar(day.water_ml, waterGoal, 'bg-carb')}
+      <div class="flex gap-2 mt-3">
+        <button data-water="250" class="flex-1 py-2 rounded-xl border border-line bg-ink text-sm hover:border-carb/50 transition">+250</button>
+        <button data-water="500" class="flex-1 py-2 rounded-xl border border-line bg-ink text-sm hover:border-carb/50 transition">+500</button>
+        <button data-water="-250" class="px-4 py-2 rounded-xl border border-line bg-ink text-sm text-muted hover:text-white transition">−250</button>
+      </div>
+    </section>`;
+
+  // Приёмы пищи
+  const mealCards = MEALS.map((m) => {
+    const items = (day.meals && day.meals[m.id]) || [];
+    const kcal = items.reduce((s, e) => s + (e.calories || 0), 0);
+    const rows = items.length
+      ? items.map((e) => `
+          <button data-entry="${e.id}" class="w-full flex items-center justify-between px-4 py-2.5 border-t border-line/60 text-left hover:bg-cardhi/40 transition">
+            <div class="min-w-0 pr-3">
+              <p class="text-sm truncate">${esc(e.name)}</p>
+              <p class="text-[11px] text-muted">${fmt(e.amount)} ${e.unit === 'serving' ? 'порц.' : e.unit === 'ml' ? 'мл' : 'г'}</p>
+            </div>
+            <span class="text-sm text-accent shrink-0">${fmt(e.calories)} ккал</span>
+          </button>`).join('')
+      : `<p class="px-4 py-3 border-t border-line/60 text-xs text-muted/70">Пусто</p>`;
+    return `
+      <section class="rounded-2xl bg-card border border-line overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3">
+          <div><h3 class="text-sm font-medium">${m.label}</h3><p class="text-[11px] text-accent/80">${fmt(kcal)} ккал</p></div>
+          <button data-add-meal="${m.id}" class="w-8 h-8 grid place-items-center rounded-full bg-accent/15 text-accent hover:bg-accent/25 transition"><span class="w-4 h-4">${ICON.plus}</span></button>
+        </div>
+        ${rows}
+      </section>`;
+  }).join('');
+
   return h(`
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 pb-28">
+    <div class="max-w-2xl mx-auto px-4 sm:px-6 pb-28">
       <header style="padding-top: calc(env(safe-area-inset-top) + 1rem)" class="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 pb-3 bg-ink/85 backdrop-blur-md border-b border-line/60">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <span class="text-accent w-6 h-6 inline-block">${ICON.book}</span>
-            <h1 class="text-lg font-semibold tracking-tight">Дневник</h1>
-          </div>
-          <span class="text-sm text-muted capitalize">${esc(today)}</span>
+          <h1 class="text-lg font-semibold tracking-tight">Дневник</h1>
+          <button data-goal class="flex items-center gap-1.5 text-sm text-muted hover:text-white border border-line rounded-full px-3 py-1.5 bg-card transition"><span class="w-4 h-4">${ICON.target}</span> Цель</button>
+        </div>
+        <div class="mt-3 flex items-center justify-between">
+          <button data-day="-1" class="w-9 h-9 grid place-items-center rounded-full border border-line bg-card text-muted hover:text-white"><span class="w-5 h-5">${ICON.chevL}</span></button>
+          <button data-pick-date class="text-sm font-medium capitalize px-3 py-1.5">${esc(dateLabel(state.diaryDate))}</button>
+          <button data-day="1" class="w-9 h-9 grid place-items-center rounded-full border border-line bg-card text-muted hover:text-white"><span class="w-5 h-5">${ICON.chevR}</span></button>
         </div>
       </header>
 
-      <div class="mt-10 text-center text-muted py-16">
-        <div class="w-14 h-14 mx-auto rounded-2xl border border-line grid place-items-center mb-4 text-accent"><span class="w-6 h-6 inline-block">${ICON.book}</span></div>
-        <p class="text-base text-gray-200">Дневник питания скоро</p>
-        <p class="text-sm mt-1 text-muted/80 max-w-xs mx-auto">Здесь появятся приёмы пищи, вода, цель КБЖУ и календарь. Добавляем в следующих обновлениях.</p>
+      <div class="mt-4 rounded-2xl bg-card border border-line p-4">
+        ${summary}
+        ${macros}
       </div>
+
+      <div class="mt-3">${water}</div>
+
+      <div class="mt-3 space-y-3">${mealCards}</div>
     </div>`);
+}
+
+function wireDiary(root) {
+  root.querySelectorAll('[data-day]').forEach((b) => b.addEventListener('click', async () => {
+    state.diaryDate = shiftDate(state.diaryDate, Number(b.getAttribute('data-day')));
+    showLoader('Загружаем день…'); await loadDay(); hideLoader(); renderApp();
+  }));
+  const pick = root.querySelector('[data-pick-date]');
+  if (pick) pick.addEventListener('click', () => {
+    const inp = document.createElement('input');
+    inp.type = 'date'; inp.value = state.diaryDate;
+    inp.className = 'fixed opacity-0 pointer-events-none';
+    document.body.appendChild(inp);
+    inp.addEventListener('change', async () => {
+      if (inp.value) { state.diaryDate = inp.value; showLoader('Загружаем день…'); await loadDay(); hideLoader(); renderApp(); }
+      inp.remove();
+    });
+    inp.showPicker ? inp.showPicker() : inp.click();
+  });
+  root.querySelectorAll('[data-goal]').forEach((b) => b.addEventListener('click', openGoalModal));
+  root.querySelectorAll('[data-water]').forEach((b) => b.addEventListener('click', () => addWater(Number(b.getAttribute('data-water')))));
+  root.querySelectorAll('[data-add-meal]').forEach((b) => b.addEventListener('click', () => openAddToMeal(b.getAttribute('data-add-meal'))));
+  root.querySelectorAll('[data-entry]').forEach((b) => b.addEventListener('click', () => openEntryActions(Number(b.getAttribute('data-entry')))));
+}
+
+async function addWater(ml) {
+  try {
+    await api('/api/tracker/water', { method: 'POST', json: { date: state.diaryDate, amount_ml: ml } });
+    await reloadDay();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+/* Выбор способа добавления в приём пищи */
+function openAddToMeal(mealType) {
+  const label = (MEALS.find((m) => m.id === mealType) || {}).label || '';
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-1">Добавить — ${esc(label)}</h2>
+      <p class="text-sm text-muted mb-4">Выберите источник</p>
+      <div class="space-y-2">
+        <button data-src="dish" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.grid}</span><div><p class="text-sm font-medium">Из меню</p><p class="text-xs text-muted">Готовое блюдо из вашего меню</p></div></button>
+        <button data-src="custom" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.edit}</span><div><p class="text-sm font-medium">Вручную</p><p class="text-xs text-muted">Ввести название и КБЖУ</p></div></button>
+        <div class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line/60 bg-card/50 text-left opacity-50"><span class="text-muted w-5 h-5">${ICON.barcode}</span><div><p class="text-sm font-medium">Поиск / штрих-код / фото</p><p class="text-xs text-muted">Скоро</p></div></div>
+      </div>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelector('[data-src="dish"]').addEventListener('click', () => openPickDish(mealType));
+  node.querySelector('[data-src="custom"]').addEventListener('click', () => openCustomEntry(mealType));
+  openModal(node);
+}
+
+/* Список блюд меню для добавления в дневник */
+async function openPickDish(mealType) {
+  showLoader('Загружаем блюда…');
+  let dishes = [];
+  try { dishes = await api('/api/dishes'); } catch (err) { hideLoader(); return toast(err.message, 'error'); }
+  hideLoader();
+
+  const list = dishes.length
+    ? dishes.map((d) => `
+        <button data-dish="${d.id}" class="w-full flex items-center justify-between p-3 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left">
+          <div class="min-w-0 pr-3"><p class="text-sm truncate">${esc(d.title)}</p><p class="text-[11px] text-muted">${fmt(d.calories)} ккал / порция</p></div>
+          <span class="text-accent w-5 h-5 shrink-0">${ICON.plus}</span>
+        </button>`).join('')
+    : `<p class="text-center text-sm text-muted py-8">В меню пока нет блюд</p>`;
+
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-3">Из меню</h2>
+      <div class="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">${list}</div>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelectorAll('[data-dish]').forEach((b) => b.addEventListener('click', () => {
+    const dish = dishes.find((x) => x.id === Number(b.getAttribute('data-dish')));
+    openServings(dish, mealType);
+  }));
+  openModal(node);
+}
+
+/* Ввод количества порций для блюда */
+function openServings(dish, mealType) {
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-1">${esc(dish.title)}</h2>
+      <p class="text-sm text-muted mb-4">${fmt(dish.calories)} ккал за порцию</p>
+      <label class="text-xs text-muted mb-1 block">Сколько порций</label>
+      <input id="srv" inputmode="decimal" value="1" class="w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60" />
+      <button id="srv-add" class="mt-4 w-full py-3 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Добавить</button>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelector('#srv-add').addEventListener('click', async () => {
+    const servings = num(node.querySelector('#srv').value) || 1;
+    try {
+      await api('/api/tracker/entries/from-dish', { method: 'POST', json: { date: state.diaryDate, meal_type: mealType, dish_id: dish.id, servings } });
+      closeModal();
+      await reloadDay();
+      toast('Добавлено в дневник', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
+}
+
+/* Ручная запись / редактирование записи */
+function openCustomEntry(mealType, existing = null) {
+  const isEdit = !!existing;
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+  const v = (k, d = '') => (isEdit && existing[k] != null ? esc(String(existing[k])) : d);
+  const unit = isEdit ? existing.unit : 'g';
+  const unitOpt = (val, label) => `<option value="${val}"${unit === val ? ' selected' : ''}>${label}</option>`;
+
+  const inner = `
+    <div class="p-5 sm:p-6 space-y-3 max-h-[85vh] overflow-y-auto no-scrollbar">
+      <h2 class="text-lg font-semibold">${isEdit ? 'Изменить запись' : 'Своя запись'}</h2>
+      <div><label class="text-xs text-muted mb-1 block">Название</label><input id="f-name" value="${v('name')}" placeholder="Например, Гречка с курицей" class="${fieldCls}" /></div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="text-xs text-muted mb-1 block">Количество</label><input id="f-amount" inputmode="decimal" value="${v('amount', '1')}" class="${fieldCls}" /></div>
+        <div><label class="text-xs text-muted mb-1 block">Единица</label><select id="f-unit" class="${fieldCls}">${unitOpt('g', 'граммы')}${unitOpt('serving', 'порции')}${unitOpt('ml', 'мл')}</select></div>
+      </div>
+      <div class="rounded-2xl bg-card border border-line p-4">
+        <p class="text-xs uppercase tracking-wider text-muted mb-3">КБЖУ записи (итого)</p>
+        <div class="mb-3"><label class="text-xs text-muted mb-1 block">Калории, ккал</label><input id="f-cal" inputmode="decimal" value="${v('calories', '0')}" class="${fieldCls}" /></div>
+        <div class="grid grid-cols-3 gap-2">
+          <div><label class="text-xs text-prot mb-1 block">Белки</label><input id="f-prot" inputmode="decimal" value="${v('proteins', '0')}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-fat mb-1 block">Жиры</label><input id="f-fat" inputmode="decimal" value="${v('fats', '0')}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input id="f-carb" inputmode="decimal" value="${v('carbohydrates', '0')}" class="${fieldCls}" /></div>
+        </div>
+      </div>
+      <button id="f-save" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">${isEdit ? 'Сохранить' : 'Добавить'}</button>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelector('#f-save').addEventListener('click', async () => {
+    const name = node.querySelector('#f-name').value.trim();
+    if (!name) return toast('Введите название', 'error');
+    const body = {
+      meal_type: mealType,
+      name,
+      amount: num(node.querySelector('#f-amount').value) || 1,
+      unit: node.querySelector('#f-unit').value,
+      calories: num(node.querySelector('#f-cal').value),
+      proteins: num(node.querySelector('#f-prot').value),
+      fats: num(node.querySelector('#f-fat').value),
+      carbohydrates: num(node.querySelector('#f-carb').value),
+    };
+    try {
+      if (isEdit) {
+        await api(`/api/tracker/entries/${existing.id}`, { method: 'PUT', json: body });
+      } else {
+        await api('/api/tracker/entries', { method: 'POST', json: { ...body, date: state.diaryDate, source_type: 'custom' } });
+      }
+      closeModal();
+      await reloadDay();
+      toast(isEdit ? 'Запись обновлена' : 'Добавлено', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
+}
+
+/* Действия с записью: редактировать / удалить */
+function openEntryActions(entryId) {
+  let entry = null;
+  for (const m of MEALS) {
+    const found = (state.day?.meals?.[m.id] || []).find((e) => e.id === entryId);
+    if (found) { entry = found; break; }
+  }
+  if (!entry) return;
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-base font-semibold mb-1 truncate">${esc(entry.name)}</h2>
+      <p class="text-sm text-muted mb-4">${fmt(entry.calories)} ккал · Б ${fmt(entry.proteins)} · Ж ${fmt(entry.fats)} · У ${fmt(entry.carbohydrates)}</p>
+      <div class="space-y-2">
+        <button data-do="edit" class="w-full flex items-center gap-2 py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition justify-center">${ICON.edit} Редактировать</button>
+        <button data-do="del" class="w-full flex items-center gap-2 py-3 rounded-xl border border-[#5b2630] text-red-300 text-sm hover:bg-[#2a1518] transition justify-center">${ICON.trash} Удалить</button>
+      </div>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelector('[data-do="edit"]').addEventListener('click', () => openCustomEntry(entry.meal_type, entry));
+  node.querySelector('[data-do="del"]').addEventListener('click', async () => {
+    try {
+      await api(`/api/tracker/entries/${entry.id}`, { method: 'DELETE' });
+      closeModal();
+      await reloadDay();
+      toast('Запись удалена', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
+}
+
+/* Цель КБЖУ + калькулятор Миффлина */
+function openGoalModal() {
+  const g = state.day?.goal || {};
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+  const gv = (k, d = '') => (g[k] != null ? esc(String(g[k])) : d);
+  const actOpt = (val, label) => `<option value="${val}"${Number(g.activity) === val ? ' selected' : ''}>${label}</option>`;
+  const sexOpt = (val, label) => `<option value="${val}"${g.sex === val ? ' selected' : ''}>${label}</option>`;
+
+  const inner = `
+    <div class="p-5 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto no-scrollbar">
+      <h2 class="text-lg font-semibold">Цель</h2>
+
+      <div class="rounded-2xl bg-card border border-line p-4 space-y-3">
+        <p class="text-xs uppercase tracking-wider text-muted">Калькулятор (необязательно)</p>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="text-xs text-muted mb-1 block">Пол</label><select id="g-sex" class="${fieldCls}">${sexOpt('male', 'Мужской')}${sexOpt('female', 'Женский')}</select></div>
+          <div><label class="text-xs text-muted mb-1 block">Возраст</label><input id="g-age" inputmode="numeric" value="${gv('age')}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-muted mb-1 block">Рост, см</label><input id="g-h" inputmode="decimal" value="${gv('height_cm')}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-muted mb-1 block">Вес, кг</label><input id="g-w" inputmode="decimal" value="${gv('weight_kg')}" class="${fieldCls}" /></div>
+        </div>
+        <div><label class="text-xs text-muted mb-1 block">Активность</label><select id="g-act" class="${fieldCls}">${actOpt(1.2, 'Минимальная')}${actOpt(1.375, 'Лёгкая (1–3 трен/нед)')}${actOpt(1.55, 'Средняя (3–5)')}${actOpt(1.725, 'Высокая (6–7)')}${actOpt(1.9, 'Очень высокая')}</select></div>
+        <button id="g-calc" class="w-full py-2.5 rounded-xl border border-accent/40 bg-accent/10 text-accent text-sm font-medium hover:bg-accent/15 transition">Рассчитать поддержание</button>
+        <p class="text-[11px] text-muted/80">Расчёт даёт норму поддержания веса. Скорректируйте цифры ниже под свою задачу перед сохранением.</p>
+      </div>
+
+      <div class="rounded-2xl bg-card border border-line p-4 space-y-3">
+        <p class="text-xs uppercase tracking-wider text-muted">Цель на день</p>
+        <div><label class="text-xs text-muted mb-1 block">Калории, ккал</label><input id="g-cal" inputmode="decimal" value="${gv('target_calories', '0')}" class="${fieldCls}" /></div>
+        <div class="grid grid-cols-3 gap-2">
+          <div><label class="text-xs text-prot mb-1 block">Белки</label><input id="g-prot" inputmode="decimal" value="${gv('target_proteins', '0')}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-fat mb-1 block">Жиры</label><input id="g-fat" inputmode="decimal" value="${gv('target_fats', '0')}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input id="g-carb" inputmode="decimal" value="${gv('target_carbohydrates', '0')}" class="${fieldCls}" /></div>
+        </div>
+        <div><label class="text-xs text-muted mb-1 block">Вода, мл</label><input id="g-water" inputmode="numeric" value="${gv('target_water_ml', '2000')}" class="${fieldCls}" /></div>
+      </div>
+
+      <button id="g-save" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Сохранить цель</button>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+
+  node.querySelector('#g-calc').addEventListener('click', () => {
+    const sex = node.querySelector('#g-sex').value;
+    const age = num(node.querySelector('#g-age').value);
+    const hcm = num(node.querySelector('#g-h').value);
+    const wkg = num(node.querySelector('#g-w').value);
+    const act = num(node.querySelector('#g-act').value) || 1.2;
+    if (!age || !hcm || !wkg) return toast('Заполните возраст, рост и вес', 'error');
+    const bmr = 10 * wkg + 6.25 * hcm - 5 * age + (sex === 'female' ? -161 : 5);
+    const cal = Math.round(bmr * act);
+    node.querySelector('#g-cal').value = cal;
+    node.querySelector('#g-prot').value = Math.round((cal * 0.30) / 4);
+    node.querySelector('#g-fat').value = Math.round((cal * 0.30) / 9);
+    node.querySelector('#g-carb').value = Math.round((cal * 0.40) / 4);
+    node.querySelector('#g-water').value = Math.round(wkg * 30);
+    toast('Рассчитано — проверьте и сохраните', 'success');
+  });
+
+  node.querySelector('#g-save').addEventListener('click', async () => {
+    const body = {
+      target_calories: num(node.querySelector('#g-cal').value),
+      target_proteins: num(node.querySelector('#g-prot').value),
+      target_fats: num(node.querySelector('#g-fat').value),
+      target_carbohydrates: num(node.querySelector('#g-carb').value),
+      target_water_ml: Math.round(num(node.querySelector('#g-water').value)) || 2000,
+      sex: node.querySelector('#g-sex').value,
+      age: Math.round(num(node.querySelector('#g-age').value)) || null,
+      height_cm: num(node.querySelector('#g-h').value) || null,
+      weight_kg: num(node.querySelector('#g-w').value) || null,
+      activity: num(node.querySelector('#g-act').value) || null,
+    };
+    try {
+      await api('/api/tracker/goal', { method: 'PUT', json: body });
+      closeModal();
+      await reloadDay();
+      toast('Цель сохранена', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
 }
 
 /* --------------------------- Нижняя навигация --------------------------- */
@@ -368,9 +768,15 @@ function navBar() {
 
 function wireNav(root) {
   root.querySelectorAll('[data-tab]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const t = btn.getAttribute('data-tab');
       if (state.tab === t) return;
+      if (t === 'diary') {
+        if (!state.diaryDate) state.diaryDate = todayStr();
+        showLoader('Загружаем дневник…');
+        await loadDay();
+        hideLoader();
+      }
       state.tab = t;
       renderApp();
     });
@@ -427,6 +833,7 @@ function dishCard(dish) {
                  <p class="text-[11px] leading-tight text-muted/80">Нет фото</p>
                </div>`
         }
+        <button data-add-diary class="absolute top-2 right-2 z-10 w-8 h-8 grid place-items-center rounded-full bg-ink/70 backdrop-blur border border-line text-accent hover:bg-accent hover:text-ink transition" title="Добавить в дневник"><span class="w-4 h-4">${ICON.plus}</span></button>
         <!-- Плашка с названием -->
         <div class="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
           <h3 class="text-sm font-medium leading-snug line-clamp-2">${esc(dish.title)}</h3>
@@ -437,6 +844,12 @@ function dishCard(dish) {
 
   card.addEventListener('click', () => openDetailModal(dish));
 
+  const diaryBtn = card.querySelector('[data-add-diary]');
+  if (diaryBtn) diaryBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    quickAddDishToDiary(dish);
+  });
+
   const genBtn = card.querySelector('[data-gen]');
   if (genBtn) {
     genBtn.addEventListener('click', async (e) => {
@@ -445,6 +858,38 @@ function dishCard(dish) {
     });
   }
   return card;
+}
+
+/* Быстрое добавление блюда из меню в сегодняшний приём пищи */
+function quickAddDishToDiary(dish) {
+  const date = todayStr();
+  const mealBtns = MEALS.map((m) =>
+    `<button data-meal="${m.id}" class="py-2.5 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition">${m.label}</button>`
+  ).join('');
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-1">${esc(dish.title)}</h2>
+      <p class="text-sm text-muted mb-4">${fmt(dish.calories)} ккал / порция · в дневник на сегодня</p>
+      <label class="text-xs text-muted mb-1 block">Порции</label>
+      <input id="qa-srv" inputmode="decimal" value="1" class="w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 mb-4" />
+      <label class="text-xs text-muted mb-2 block">Приём пищи</label>
+      <div class="grid grid-cols-2 gap-2">${mealBtns}</div>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelectorAll('[data-meal]').forEach((b) => b.addEventListener('click', async () => {
+    const servings = num(node.querySelector('#qa-srv').value) || 1;
+    try {
+      await api('/api/tracker/entries/from-dish', {
+        method: 'POST',
+        json: { date, meal_type: b.getAttribute('data-meal'), dish_id: dish.id, servings },
+      });
+      closeModal();
+      toast('Добавлено в дневник на сегодня', 'success');
+      if (state.tab === 'diary' && state.diaryDate === date) await reloadDay();
+    } catch (err) { toast(err.message, 'error'); }
+  }));
+  openModal(node);
 }
 
 /* --------------------- Блок КБЖУ (фитнес-стиль) ------------------------- */
