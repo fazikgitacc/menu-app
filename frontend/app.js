@@ -403,8 +403,9 @@ function diaryView() {
        </div>`;
 
   const macro = (label, val, target, cls) => `
-    <div>
-      <div class="flex justify-between text-xs mb-1"><span class="${cls}">${label}</span><span class="text-muted">${fmt(val)}${target ? ` / ${fmt(target)}` : ''} г</span></div>
+    <div class="min-w-0">
+      <p class="text-xs ${cls}">${label}</p>
+      <p class="text-[11px] text-muted mb-1.5 truncate">${fmt(val)}${target ? ` / ${fmt(target)}` : ''} г</p>
       ${progressBar(val, target || val || 1, cls.replace('text-', 'bg-'))}
     </div>`;
 
@@ -977,6 +978,17 @@ function openProductEdit(p) {
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
+
+  // Ввод Б/Ж/У автоматически считает калории на 100 г.
+  const recalc = () => {
+    node.querySelector('#p-cal').value = Math.round(
+      num(node.querySelector('#p-prot').value) * 4 +
+      num(node.querySelector('#p-fat').value) * 9 +
+      num(node.querySelector('#p-carb').value) * 4
+    );
+  };
+  ['#p-prot', '#p-fat', '#p-carb'].forEach((s) => node.querySelector(s).addEventListener('input', recalc));
+
   node.querySelector('#p-save').addEventListener('click', async () => {
     const name = node.querySelector('#p-name').value.trim();
     if (!name) return toast('Введите название', 'error');
@@ -1048,6 +1060,13 @@ function openProductPortion(product, mealType = null, date = null) {
   paintMeal(); updateTotal();
   node.querySelectorAll('[data-meal]').forEach((b) => b.addEventListener('click', () => { meal = b.getAttribute('data-meal'); paintMeal(); }));
   ['#pp-g', '#pp-cal'].forEach((s) => $(s).addEventListener('input', updateTotal));
+
+  // Ввод Б/Ж/У автоматически считает калории на 100 г.
+  const recalcCal = () => {
+    $('#pp-cal').value = Math.round(num($('#pp-prot').value) * 4 + num($('#pp-fat').value) * 9 + num($('#pp-carb').value) * 4);
+    updateTotal();
+  };
+  ['#pp-prot', '#pp-fat', '#pp-carb'].forEach((s) => $(s).addEventListener('input', recalcCal));
 
   $('#pp-add').addEventListener('click', async () => {
     const name = $('#pp-name').value.trim();
