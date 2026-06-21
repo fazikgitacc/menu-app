@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 import config
-from routers import auth_router, dishes_router, tracker_router
+from routers import auth_router, dishes_router, tracker_router, products_router
 
 # Схема БД управляется Alembic (`alembic upgrade head`), а не create_all.
 app = FastAPI(title="Домашнее меню", version="1.1.0")
@@ -14,6 +14,7 @@ app = FastAPI(title="Домашнее меню", version="1.1.0")
 app.include_router(auth_router.router)
 app.include_router(dishes_router.router)
 app.include_router(tracker_router.router)
+app.include_router(products_router.router)
 
 @app.get("/healthz", include_in_schema=False)
 def healthz():

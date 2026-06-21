@@ -1,5 +1,5 @@
 """Эндпоинты трекера питания: дневник (приёмы пищи), вода, цель КБЖУ."""
-from datetime import date as date_cls
+from datetime import date as date_cls, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -156,7 +156,59 @@ def add_entry_from_dish(
     return entry
 
 
-@router.put("/entries/{entry_id}", response_model=schemas.MealEntryOut)
+@router.post("/entries/from-product", response_model=schemas.MealEntryOut)
+def add_entry_from_product(
+    payload: schemas.EntryFromProduct,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Логирует продукт в дневник (снимок на граммовку) и обновляет каталог «Продукты»."""
+    _validate_meal(payload.meal_type)
+    grams = payload.grams if payload.grams and payload.grams > 0 else 100
+    factor = grams / 100.0
+
+    entry = models.MealEntry(
+        user_id=user.id,
+        date=payload.date,
+        meal_type=payload.meal_type,
+        source_type="product",
+        name=payload.name.strip(),
+        amount=grams,
+        unit="g",
+        calories=round(payload.calories_100 * factor, 1),
+        proteins=round(payload.proteins_100 * factor, 1),
+        fats=round(payload.fats_100 * factor, 1),
+        carbohydrates=round(payload.carbohydrates_100 * factor, 1),
+    )
+    db.add(entry)
+
+    if payload.save_to_catalog:
+        prod = None
+        if payload.barcode:
+            prod = (
+                db.query(models.UserProduct)
+                .filter(
+                    models.UserProduct.user_id == user.id,
+                    models.UserProduct.barcode == payload.barcode,
+                )
+                .first()
+            )
+        if prod is None:
+            prod = models.UserProduct(user_id=user.id, barcode=payload.barcode or None)
+            db.add(prod)
+        prod.name = payload.name.strip()
+        prod.brand = payload.brand
+        prod.calories = payload.calories_100
+        prod.proteins = payload.proteins_100
+        prod.fats = payload.fats_100
+        prod.carbohydrates = payload.carbohydrates_100
+        prod.serving_size_g = payload.serving_size_g
+        prod.image_url = payload.image_url
+        prod.last_used_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(entry)
+    return entry
 def update_entry(
     entry_id: int,
     payload: schemas.MealEntryUpdate,

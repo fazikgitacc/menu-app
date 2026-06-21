@@ -15,6 +15,7 @@ const state = {
   menuMode: 'dishes',   // 'dishes' | 'products'
   diaryDate: null,      // 'YYYY-MM-DD'
   day: null,            // загруженные данные дня
+  products: null,       // личный каталог продуктов
 };
 
 /* ----------------------------- API-обёртки ------------------------------ */
@@ -118,6 +119,7 @@ ICON.drop = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 ICON.target = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-full h-full"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/></svg>';
 ICON.chevL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M15 6l-6 6 6 6"/></svg>';
 ICON.chevR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M9 6l6 6-6 6"/></svg>';
+ICON.search = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 ICON.calendar = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></svg>';
 
 /* ------------------------- Глобальный лоадер ---------------------------- */
@@ -250,6 +252,7 @@ function renderApp() {
   } else {
     root.appendChild(menuView());
     if (state.menuMode === 'dishes') { renderTabs(); renderGrid(); }
+    else { renderProducts(); }
     wireMenu(root);
   }
 
@@ -267,11 +270,7 @@ function menuView() {
     }">${label}</button>`;
 
   const body = isProducts
-    ? `<div class="mt-8 text-center text-muted py-16">
-         <div class="w-14 h-14 mx-auto rounded-2xl border border-line grid place-items-center mb-4 text-accent">${ICON.barcode}</div>
-         <p class="text-base text-gray-200">Пока нет продуктов</p>
-         <p class="text-sm mt-1 text-muted/80 max-w-xs mx-auto">Продукты из трекера будут появляться здесь — добавим в следующем обновлении.</p>
-       </div>`
+    ? `<main id="prod-grid" class="mt-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4"></main>`
     : `<button id="random-btn" class="mt-5 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-accent/40 bg-accent/10 text-accent font-medium text-sm hover:bg-accent/15 transition">
          ${ICON.dice}<span>Что приготовить? <span class="text-accent/70">Случайный выбор</span></span>
        </button>
@@ -319,10 +318,13 @@ function menuView() {
 
 function wireMenu(root) {
   root.querySelectorAll('[data-mode]').forEach((b) => {
-    b.addEventListener('click', () => {
+    b.addEventListener('click', async () => {
       const m = b.getAttribute('data-mode');
       if (state.menuMode === m) return;
       state.menuMode = m;
+      if (m === 'products' && state.products === null) {
+        showLoader('Загружаем продукты…'); await loadProducts(); hideLoader();
+      }
       renderApp();
     });
   });
@@ -512,13 +514,17 @@ function openAddToMeal(mealType) {
       <p class="text-sm text-muted mb-4">Выберите источник</p>
       <div class="space-y-2">
         <button data-src="dish" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.grid}</span><div><p class="text-sm font-medium">Из меню</p><p class="text-xs text-muted">Готовое блюдо из вашего меню</p></div></button>
+        <button data-src="search" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.search}</span><div><p class="text-sm font-medium">Поиск продукта</p><p class="text-xs text-muted">База Open Food Facts</p></div></button>
+        <button data-src="barcode" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.barcode}</span><div><p class="text-sm font-medium">Штрих-код</p><p class="text-xs text-muted">Ввести номер штрих-кода</p></div></button>
         <button data-src="custom" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.edit}</span><div><p class="text-sm font-medium">Вручную</p><p class="text-xs text-muted">Ввести название и КБЖУ</p></div></button>
-        <div class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line/60 bg-card/50 text-left opacity-50"><span class="text-muted w-5 h-5">${ICON.barcode}</span><div><p class="text-sm font-medium">Поиск / штрих-код / фото</p><p class="text-xs text-muted">Скоро</p></div></div>
+        <div class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line/60 bg-card/50 text-left opacity-50"><span class="text-muted w-5 h-5">${ICON.image}</span><div><p class="text-sm font-medium">По фото</p><p class="text-xs text-muted">Скоро</p></div></div>
       </div>
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
   node.querySelector('[data-src="dish"]').addEventListener('click', () => openPickDish(mealType));
+  node.querySelector('[data-src="search"]').addEventListener('click', () => openProductSearch(mealType));
+  node.querySelector('[data-src="barcode"]').addEventListener('click', () => openBarcodeManual(mealType));
   node.querySelector('[data-src="custom"]').addEventListener('click', () => openCustomEntry(mealType));
   openModal(node);
 }
@@ -874,6 +880,288 @@ function openCalendar() {
   }
   draw();
   openModal(node);
+}
+
+/* ------------------------------ Продукты -------------------------------- */
+function guessMeal() {
+  const hr = new Date().getHours();
+  if (hr < 11) return 'breakfast';
+  if (hr < 16) return 'lunch';
+  if (hr < 21) return 'dinner';
+  return 'snack';
+}
+
+async function loadProducts() {
+  try { state.products = await api('/api/products'); }
+  catch (err) { toast(err.message, 'error'); state.products = []; }
+}
+
+function renderProducts() {
+  const grid = document.getElementById('prod-grid');
+  if (!grid) return;
+  const items = state.products || [];
+  if (!items.length) {
+    grid.innerHTML = `
+      <div class="col-span-full text-center text-muted py-16">
+        <div class="w-14 h-14 mx-auto rounded-2xl border border-line grid place-items-center mb-4 text-accent"><span class="w-5 h-5 inline-block">${ICON.barcode}</span></div>
+        <p class="text-base text-gray-200">Пока нет продуктов</p>
+        <p class="text-sm mt-1 text-muted/80 max-w-xs mx-auto">Добавьте продукт в дневник через поиск или штрих-код — он сохранится здесь для быстрого повторного добавления.</p>
+      </div>`;
+    return;
+  }
+  grid.innerHTML = '';
+  items.forEach((p) => grid.appendChild(productCard(p)));
+}
+
+function productCard(p) {
+  const card = h(`
+    <article class="fadein relative rounded-2xl overflow-hidden bg-card border border-line cursor-pointer hover:border-line/80 transition">
+      <div class="relative aspect-square bg-graphite">
+        ${p.image_url
+          ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" class="w-full h-full object-cover" />`
+          : `<div class="absolute inset-0 flex flex-col items-center justify-center text-center px-3"><div class="w-9 h-9 rounded-full border border-line grid place-items-center text-muted mb-2">${ICON.barcode}</div><p class="text-[11px] text-muted/80">Продукт</p></div>`}
+        <button data-add-diary class="absolute top-2 right-2 z-10 w-8 h-8 grid place-items-center rounded-full bg-ink/70 backdrop-blur border border-line text-accent hover:bg-accent hover:text-ink transition" title="В дневник"><span class="w-4 h-4">${ICON.plus}</span></button>
+        <div class="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+          <h3 class="text-sm font-medium leading-snug line-clamp-2">${esc(p.name)}</h3>
+          <p class="text-[11px] text-accent/80 mt-0.5">${fmt(p.calories)} ккал / 100 г</p>
+        </div>
+      </div>
+    </article>`);
+  card.addEventListener('click', () => openProductActions(p));
+  card.querySelector('[data-add-diary]').addEventListener('click', (e) => { e.stopPropagation(); openProductPortion(p, null, todayStr()); });
+  return card;
+}
+
+function openProductActions(p) {
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-base font-semibold mb-1 truncate">${esc(p.name)}</h2>
+      <p class="text-sm text-muted mb-4">${fmt(p.calories)} ккал · Б ${fmt(p.proteins)} · Ж ${fmt(p.fats)} · У ${fmt(p.carbohydrates)} / 100 г</p>
+      <div class="space-y-2">
+        <button data-do="add" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-ink text-sm font-semibold hover:bg-[#eecb96] transition"><span class="w-4 h-4">${ICON.plus}</span> В дневник</button>
+        <button data-do="edit" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition">${ICON.edit} Изменить КБЖУ</button>
+        <button data-do="del" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-[#5b2630] text-red-300 text-sm hover:bg-[#2a1518] transition">${ICON.trash} Удалить</button>
+      </div>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelector('[data-do="add"]').addEventListener('click', () => openProductPortion(p, null, todayStr()));
+  node.querySelector('[data-do="edit"]').addEventListener('click', () => openProductEdit(p));
+  node.querySelector('[data-do="del"]').addEventListener('click', async () => {
+    try {
+      await api(`/api/products/${p.id}`, { method: 'DELETE' });
+      closeModal();
+      await loadProducts(); renderApp();
+      toast('Продукт удалён', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
+}
+
+function openProductEdit(p) {
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+  const inner = `
+    <div class="p-5 sm:p-6 space-y-3 max-h-[85vh] overflow-y-auto no-scrollbar">
+      <h2 class="text-lg font-semibold">Изменить продукт</h2>
+      <div><label class="text-xs text-muted mb-1 block">Название</label><input id="p-name" value="${esc(p.name)}" class="${fieldCls}" /></div>
+      <div class="rounded-2xl bg-card border border-line p-4">
+        <p class="text-xs uppercase tracking-wider text-muted mb-3">КБЖУ на 100 г</p>
+        <div class="mb-3"><label class="text-xs text-muted mb-1 block">Калории</label><input id="p-cal" inputmode="decimal" value="${esc(String(p.calories))}" class="${fieldCls}" /></div>
+        <div class="grid grid-cols-3 gap-2">
+          <div><label class="text-xs text-prot mb-1 block">Белки</label><input id="p-prot" inputmode="decimal" value="${esc(String(p.proteins))}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-fat mb-1 block">Жиры</label><input id="p-fat" inputmode="decimal" value="${esc(String(p.fats))}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input id="p-carb" inputmode="decimal" value="${esc(String(p.carbohydrates))}" class="${fieldCls}" /></div>
+        </div>
+      </div>
+      <button id="p-save" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Сохранить</button>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  node.querySelector('#p-save').addEventListener('click', async () => {
+    const name = node.querySelector('#p-name').value.trim();
+    if (!name) return toast('Введите название', 'error');
+    const body = {
+      barcode: p.barcode || null, name,
+      calories: num(node.querySelector('#p-cal').value),
+      proteins: num(node.querySelector('#p-prot').value),
+      fats: num(node.querySelector('#p-fat').value),
+      carbohydrates: num(node.querySelector('#p-carb').value),
+      serving_size_g: p.serving_size_g || null,
+      image_url: p.image_url || null,
+    };
+    try {
+      await api(`/api/products/${p.id}`, { method: 'PUT', json: body });
+      closeModal();
+      await loadProducts(); renderApp();
+      toast('Сохранено', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
+}
+
+/* Порция продукта: приём + граммы + правка КБЖУ на 100 г */
+function openProductPortion(product, mealType = null, date = null) {
+  const d = date || state.diaryDate || todayStr();
+  let meal = mealType || guessMeal();
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+  const mealBtns = MEALS.map((m) => `<button data-meal="${m.id}" class="py-2 rounded-lg text-xs font-medium transition">${m.label}</button>`).join('');
+  const g0 = product.serving_size_g && product.serving_size_g > 0 ? product.serving_size_g : 100;
+
+  const inner = `
+    <div class="p-5 sm:p-6 space-y-3 max-h-[85vh] overflow-y-auto no-scrollbar">
+      <h2 class="text-lg font-semibold leading-snug">${esc(product.name)}</h2>
+      ${product.brand ? `<p class="text-xs text-muted -mt-2">${esc(product.brand)}</p>` : ''}
+
+      <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink border border-line">${mealBtns}</div>
+
+      <div><label class="text-xs text-muted mb-1 block">Сколько грамм</label><input id="pp-g" inputmode="decimal" value="${g0}" class="${fieldCls}" /></div>
+
+      <div class="rounded-2xl bg-card border border-line p-4">
+        <div class="flex items-center justify-between mb-3"><p class="text-xs uppercase tracking-wider text-muted">КБЖУ на 100 г</p><span class="text-[11px] text-muted/70">правьте при неточности</span></div>
+        <div class="mb-3"><label class="text-xs text-muted mb-1 block">Калории</label><input id="pp-cal" inputmode="decimal" value="${esc(String(product.calories))}" class="${fieldCls}" /></div>
+        <div class="grid grid-cols-3 gap-2">
+          <div><label class="text-xs text-prot mb-1 block">Белки</label><input id="pp-prot" inputmode="decimal" value="${esc(String(product.proteins))}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-fat mb-1 block">Жиры</label><input id="pp-fat" inputmode="decimal" value="${esc(String(product.fats))}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input id="pp-carb" inputmode="decimal" value="${esc(String(product.carbohydrates))}" class="${fieldCls}" /></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between rounded-xl bg-card border border-line px-4 py-3">
+        <span class="text-sm text-muted">Итого в порции</span>
+        <span id="pp-total" class="text-sm font-semibold text-accent">— ккал</span>
+      </div>
+
+      <button id="pp-add" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Добавить в дневник</button>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  const $ = (s) => node.querySelector(s);
+
+  const paintMeal = () => node.querySelectorAll('[data-meal]').forEach((b) => {
+    const on = b.getAttribute('data-meal') === meal;
+    b.classList.toggle('bg-accent', on); b.classList.toggle('text-ink', on); b.classList.toggle('text-muted', !on);
+  });
+  const updateTotal = () => {
+    const g = num($('#pp-g').value) || 0;
+    $('#pp-total').textContent = `${fmt(Math.round(num($('#pp-cal').value) * g / 100))} ккал`;
+  };
+  paintMeal(); updateTotal();
+  node.querySelectorAll('[data-meal]').forEach((b) => b.addEventListener('click', () => { meal = b.getAttribute('data-meal'); paintMeal(); }));
+  ['#pp-g', '#pp-cal'].forEach((s) => $(s).addEventListener('input', updateTotal));
+
+  $('#pp-add').addEventListener('click', async () => {
+    const grams = num($('#pp-g').value) || 100;
+    const body = {
+      date: d, meal_type: meal, grams,
+      barcode: product.barcode || null,
+      name: product.name, brand: product.brand || null,
+      calories_100: num($('#pp-cal').value),
+      proteins_100: num($('#pp-prot').value),
+      fats_100: num($('#pp-fat').value),
+      carbohydrates_100: num($('#pp-carb').value),
+      serving_size_g: product.serving_size_g || null,
+      image_url: product.image_url || null,
+      save_to_catalog: true,
+    };
+    try {
+      await api('/api/tracker/entries/from-product', { method: 'POST', json: body });
+      closeModal();
+      toast('Добавлено в дневник', 'success');
+      state.products = null; // каталог обновился
+      if (state.tab === 'diary' && state.diaryDate === d) await reloadDay();
+      else if (state.tab === 'menu' && state.menuMode === 'products') { await loadProducts(); renderApp(); }
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
+}
+
+/* Поиск продукта в OFF */
+function openProductSearch(mealType) {
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl pl-10 pr-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-3">Поиск продукта</h2>
+      <div class="relative mb-3">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted">${ICON.search}</span>
+        <input id="ps-q" placeholder="Например, творог 5%" class="${fieldCls}" autocomplete="off" />
+      </div>
+      <div id="ps-res" class="space-y-2 max-h-[55vh] overflow-y-auto no-scrollbar">
+        <p class="text-center text-sm text-muted/70 py-8">Введите название продукта</p>
+      </div>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  const res = node.querySelector('#ps-res');
+  const input = node.querySelector('#ps-q');
+  let timer = null, seq = 0;
+
+  const renderResults = (items) => {
+    if (!items.length) { res.innerHTML = `<p class="text-center text-sm text-muted/70 py-8">Ничего не найдено</p>`; return; }
+    res.innerHTML = '';
+    items.forEach((p) => {
+      const b = h(`
+        <button class="w-full flex items-center gap-3 p-2.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left">
+          ${p.image_url ? `<img src="${esc(p.image_url)}" class="w-10 h-10 rounded-lg object-cover shrink-0" loading="lazy" />` : `<span class="w-10 h-10 rounded-lg bg-ink grid place-items-center text-muted shrink-0">${ICON.barcode}</span>`}
+          <div class="min-w-0 flex-1"><p class="text-sm truncate">${esc(p.name)}</p><p class="text-[11px] text-muted truncate">${p.brand ? esc(p.brand) + ' · ' : ''}${fmt(p.calories)} ккал / 100 г</p></div>
+        </button>`);
+      b.addEventListener('click', () => openProductPortion(p, mealType, state.diaryDate));
+      res.appendChild(b);
+    });
+  };
+
+  const doSearch = async (q) => {
+    const my = ++seq;
+    res.innerHTML = `<p class="text-center text-sm text-muted py-8">Ищем…</p>`;
+    try {
+      const items = await api(`/api/products/search?q=${encodeURIComponent(q)}`);
+      if (my !== seq) return;
+      renderResults(items);
+    } catch (err) {
+      if (my !== seq) return;
+      res.innerHTML = `<p class="text-center text-sm text-red-300 py-8">${esc(err.message)}</p>`;
+    }
+  };
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+    if (q.length < 2) { seq++; res.innerHTML = `<p class="text-center text-sm text-muted/70 py-8">Введите минимум 2 символа</p>`; return; }
+    timer = setTimeout(() => doSearch(q), 350);
+  });
+
+  openModal(node);
+  setTimeout(() => input.focus(), 50);
+}
+
+/* Ручной ввод штрих-кода */
+function openBarcodeManual(mealType) {
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-1">Штрих-код</h2>
+      <p class="text-sm text-muted mb-4">Введите номер под штрих-кодом (EAN/UPC)</p>
+      <input id="bc" inputmode="numeric" placeholder="Например, 4600000000000" class="${fieldCls} mb-3" autocomplete="off" />
+      <button id="bc-find" class="w-full py-3 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Найти</button>
+      <p class="text-[11px] text-muted/70 mt-3">Сканирование камерой добавим в следующем обновлении.</p>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  const find = async () => {
+    const code = node.querySelector('#bc').value.trim();
+    if (!/^\d{6,}$/.test(code)) return toast('Введите корректный штрих-код', 'error');
+    showLoader('Ищем в Open Food Facts…');
+    try {
+      const p = await api(`/api/products/barcode/${code}`);
+      hideLoader();
+      openProductPortion(p, mealType, state.diaryDate);
+    } catch (err) {
+      hideLoader();
+      toast(err.status === 404 ? 'Продукт не найден в базе' : err.message, 'error');
+    }
+  };
+  node.querySelector('#bc-find').addEventListener('click', find);
+  openModal(node);
+  setTimeout(() => node.querySelector('#bc').focus(), 50);
 }
 
 /* --------------------------- Нижняя навигация --------------------------- */

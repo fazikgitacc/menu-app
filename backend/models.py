@@ -28,6 +28,9 @@ class User(Base):
     goal = relationship(
         "UserGoal", uselist=False, cascade="all, delete-orphan"
     )
+    products = relationship(
+        "UserProduct", cascade="all, delete-orphan"
+    )
 
 
 class Dish(Base):
@@ -118,3 +121,39 @@ class UserGoal(Base):
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class FoodCache(Base):
+    """Общий кэш продуктов OFF по штрих-коду (чтобы не дёргать OFF повторно). КБЖУ на 100 г."""
+    __tablename__ = "food_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    barcode = Column(String(32), unique=True, index=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    brand = Column(String(255), nullable=True)
+    calories = Column(Float, nullable=False, default=0)
+    proteins = Column(Float, nullable=False, default=0)
+    fats = Column(Float, nullable=False, default=0)
+    carbohydrates = Column(Float, nullable=False, default=0)
+    serving_size_g = Column(Float, nullable=True)
+    image_url = Column(String(512), nullable=True)
+    fetched_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class UserProduct(Base):
+    """Личный каталог продуктов («Продукты»). КБЖУ на 100 г, с правками пользователя."""
+    __tablename__ = "user_products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    barcode = Column(String(32), nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    brand = Column(String(255), nullable=True)
+    calories = Column(Float, nullable=False, default=0)
+    proteins = Column(Float, nullable=False, default=0)
+    fats = Column(Float, nullable=False, default=0)
+    carbohydrates = Column(Float, nullable=False, default=0)
+    serving_size_g = Column(Float, nullable=True)
+    image_url = Column(String(512), nullable=True)
+    last_used_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

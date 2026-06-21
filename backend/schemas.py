@@ -136,3 +136,62 @@ class DiaryDayOut(BaseModel):
 
 class MarkedDaysOut(BaseModel):
     dates: list[date_cls]
+
+
+# ------------------------------- Продукты ---------------------------------
+
+class OffProduct(BaseModel):
+    """Продукт из OFF (поиск/штрих-код), КБЖУ на 100 г."""
+    barcode: Optional[str] = None
+    name: str
+    brand: Optional[str] = None
+    calories: float = 0
+    proteins: float = 0
+    fats: float = 0
+    carbohydrates: float = 0
+    serving_size_g: Optional[float] = None
+    image_url: Optional[str] = None
+
+
+class ProductOut(BaseModel):
+    """Сохранённый продукт из личного каталога, КБЖУ на 100 г."""
+    id: int
+    barcode: Optional[str] = None
+    name: str
+    brand: Optional[str] = None
+    calories: float
+    proteins: float
+    fats: float
+    carbohydrates: float
+    serving_size_g: Optional[float] = None
+    image_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ProductSave(BaseModel):
+    barcode: Optional[str] = None
+    name: str = Field(min_length=1, max_length=255)
+    brand: Optional[str] = None
+    calories: float = 0
+    proteins: float = 0
+    fats: float = 0
+    carbohydrates: float = 0
+    serving_size_g: Optional[float] = None
+    image_url: Optional[str] = None
+
+
+class EntryFromProduct(BaseModel):
+    date: date_cls
+    meal_type: str
+    grams: float = 100
+    barcode: Optional[str] = None
+    name: str = Field(min_length=1, max_length=255)
+    brand: Optional[str] = None
+    calories_100: float = 0
+    proteins_100: float = 0
+    fats_100: float = 0
+    carbohydrates_100: float = 0
+    serving_size_g: Optional[float] = None
+    image_url: Optional[str] = None
+    save_to_catalog: bool = True
