@@ -73,6 +73,27 @@ def get_day(
     )
 
 
+@router.get("/marked", response_model=schemas.MarkedDaysOut)
+def marked_days(
+    start: date_cls,
+    end: date_cls,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Даты в диапазоне [start, end], где есть хотя бы одна запись о еде."""
+    rows = (
+        db.query(models.MealEntry.date)
+        .filter(
+            models.MealEntry.user_id == user.id,
+            models.MealEntry.date >= start,
+            models.MealEntry.date <= end,
+        )
+        .distinct()
+        .all()
+    )
+    return schemas.MarkedDaysOut(dates=[r[0] for r in rows])
+
+
 @router.post("/entries", response_model=schemas.MealEntryOut)
 def add_entry(
     payload: schemas.MealEntryCreate,

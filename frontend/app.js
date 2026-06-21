@@ -781,6 +781,13 @@ function openGoalModal() {
 
   $('#g-cal').addEventListener('input', fillMacros);
 
+  // Обратная связь: правка любого макроса пересчитывает калории как сумму Б/Ж/У.
+  const recalcCal = () => {
+    const p = num($('#g-prot').value), f = num($('#g-fat').value), c = num($('#g-carb').value);
+    $('#g-cal').value = Math.round(p * 4 + f * 9 + c * 4);
+  };
+  ['#g-prot', '#g-fat', '#g-carb'].forEach((sel) => $(sel).addEventListener('input', recalcCal));
+
   $('#g-save').addEventListener('click', async () => {
     const body = {
       target_calories: num($('#g-cal').value),
@@ -817,6 +824,24 @@ function openCalendar() {
     showLoader('Загружаем день…'); await loadDay(); hideLoader(); renderApp();
   };
 
+  // Подсветка дней, где есть записи о еде (точка под числом).
+  const decorate = async () => {
+    const p2 = (n) => String(n).padStart(2, '0');
+    const dim = new Date(vy, vm, 0).getDate();
+    const start = `${vy}-${p2(vm)}-01`, end = `${vy}-${p2(vm)}-${p2(dim)}`;
+    try {
+      const res = await api(`/api/tracker/marked?start=${start}&end=${end}`);
+      const marked = new Set(res.dates || []);
+      body.querySelectorAll('[data-pick]').forEach((b) => {
+        const ds = b.getAttribute('data-pick');
+        if (!marked.has(ds)) return;
+        const dot = document.createElement('span');
+        dot.className = `absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${ds === state.diaryDate ? 'bg-ink/70' : 'bg-accent'}`;
+        b.appendChild(dot);
+      });
+    } catch (_) { /* отметки необязательны */ }
+  };
+
   function draw() {
     const first = new Date(vy, vm - 1, 1);
     const startWd = (first.getDay() + 6) % 7;            // Пн = 0
@@ -828,7 +853,7 @@ function openCalendar() {
     for (let d = 1; d <= days; d++) {
       const ds = `${vy}-${String(vm).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const sel = ds === state.diaryDate, tod = ds === today;
-      cells.push(`<button data-pick="${ds}" class="aspect-square rounded-lg text-sm flex items-center justify-center transition ${
+      cells.push(`<button data-pick="${ds}" class="relative aspect-square rounded-lg text-sm flex items-center justify-center transition ${
         sel ? 'bg-accent text-ink font-semibold' : tod ? 'border border-accent/50 text-accent' : 'text-gray-200 hover:bg-ink'
       }">${d}</button>`);
     }
@@ -845,6 +870,7 @@ function openCalendar() {
     body.querySelector('#cal-next').onclick = () => { vm++; if (vm > 12) { vm = 1; vy++; } draw(); };
     body.querySelector('#cal-today').onclick = () => go(today);
     body.querySelectorAll('[data-pick]').forEach((b) => { b.onclick = () => go(b.getAttribute('data-pick')); });
+    decorate();
   }
   draw();
   openModal(node);

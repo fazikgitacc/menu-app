@@ -132,3 +132,7 @@ class DiaryDayOut(BaseModel):
     water_ml: int
     goal: Optional[GoalOut] = None
     meals: dict[str, list[MealEntryOut]]
+
+
+class MarkedDaysOut(BaseModel):
+    dates: list[date_cls]
