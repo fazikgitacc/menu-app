@@ -184,7 +184,16 @@ def add_entry_from_product(
 
     if payload.save_to_catalog:
         prod = None
-        if payload.barcode:
+        if payload.product_id:
+            prod = (
+                db.query(models.UserProduct)
+                .filter(
+                    models.UserProduct.id == payload.product_id,
+                    models.UserProduct.user_id == user.id,
+                )
+                .first()
+            )
+        if prod is None and payload.barcode:
             prod = (
                 db.query(models.UserProduct)
                 .filter(

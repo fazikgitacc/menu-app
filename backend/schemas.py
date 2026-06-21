@@ -153,6 +153,21 @@ class OffProduct(BaseModel):
     image_url: Optional[str] = None
 
 
+class ProductSearchItem(BaseModel):
+    """Элемент выдачи поиска: из личного каталога ('catalog') или из OFF ('off')."""
+    source: str
+    id: Optional[int] = None          # id для элементов каталога
+    barcode: Optional[str] = None
+    name: str
+    brand: Optional[str] = None
+    calories: float = 0
+    proteins: float = 0
+    fats: float = 0
+    carbohydrates: float = 0
+    serving_size_g: Optional[float] = None
+    image_url: Optional[str] = None
+
+
 class ProductOut(BaseModel):
     """Сохранённый продукт из личного каталога, КБЖУ на 100 г."""
     id: int
@@ -185,6 +200,7 @@ class EntryFromProduct(BaseModel):
     date: date_cls
     meal_type: str
     grams: float = 100
+    product_id: Optional[int] = None      # обновить существующий продукт каталога
     barcode: Optional[str] = None
     name: str = Field(min_length=1, max_length=255)
     brand: Optional[str] = None

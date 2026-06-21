@@ -15,18 +15,63 @@ router = APIRouter(prefix="/api/products", tags=["products"])
 
 # ----------------------------- Поиск в OFF --------------------------------
 
-@router.get("/search", response_model=list[schemas.OffProduct])
+@router.get("/search", response_model=list[schemas.ProductSearchItem])
 async def search_products(
     q: str,
     user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     query = (q or "").strip()
     if len(query) < 2:
         return []
+    ql = query.lower()
+
+    # 1) Личный каталог. Фильтруем в Python — корректная регистронезависимость
+    #    для кириллицы (SQLite LIKE/lower() с не-ASCII не справляется).
+    catalog = (
+        db.query(models.UserProduct)
+        .filter(models.UserProduct.user_id == user.id)
+        .order_by(models.UserProduct.last_used_at.desc())
+        .all()
+    )
+    local = [
+        p for p in catalog
+        if ql in (p.name or "").lower() or ql in (p.brand or "").lower()
+    ][:20]
+
+    items: list[schemas.ProductSearchItem] = [
+        schemas.ProductSearchItem(
+            source="catalog", id=p.id, barcode=p.barcode, name=p.name, brand=p.brand,
+            calories=p.calories, proteins=p.proteins, fats=p.fats,
+            carbohydrates=p.carbohydrates, serving_size_g=p.serving_size_g,
+            image_url=p.image_url,
+        )
+        for p in local
+    ]
+    seen_barcodes = {p.barcode for p in local if p.barcode}
+    seen_names = {(p.name or "").strip().lower() for p in local}
+
+    # 2) OFF. Если недоступен — не валим поиск, отдаём хотя бы локальные.
     try:
-        return await off.search(query, limit=20)
+        off_results = await off.search(query, limit=20)
     except Exception:
-        raise HTTPException(status_code=502, detail="Open Food Facts недоступен")
+        off_results = []
+
+    for r in off_results:
+        bc = r.get("barcode")
+        nm = (r.get("name") or "").strip().lower()
+        if (bc and bc in seen_barcodes) or nm in seen_names:
+            continue
+        seen_names.add(nm)
+        if bc:
+            seen_barcodes.add(bc)
+        items.append(schemas.ProductSearchItem(
+            source="off", barcode=bc, name=r["name"], brand=r.get("brand"),
+            calories=r["calories"], proteins=r["proteins"], fats=r["fats"],
+            carbohydrates=r["carbohydrates"], serving_size_g=r.get("serving_size_g"),
+            image_url=r.get("image_url"),
+        ))
+    return items
 
 
 @router.get("/barcode/{code}", response_model=schemas.OffProduct)

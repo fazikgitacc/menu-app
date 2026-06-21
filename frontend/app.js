@@ -1009,8 +1009,8 @@ function openProductPortion(product, mealType = null, date = null) {
 
   const inner = `
     <div class="p-5 sm:p-6 space-y-3 max-h-[85vh] overflow-y-auto no-scrollbar">
-      <h2 class="text-lg font-semibold leading-snug">${esc(product.name)}</h2>
-      ${product.brand ? `<p class="text-xs text-muted -mt-2">${esc(product.brand)}</p>` : ''}
+      <div><label class="text-xs text-muted mb-1 block">Название</label><input id="pp-name" value="${esc(product.name || '')}" placeholder="Название продукта" class="${fieldCls}" /></div>
+      ${product.brand ? `<p class="text-[11px] text-muted -mt-1">${esc(product.brand)}</p>` : ''}
 
       <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink border border-line">${mealBtns}</div>
 
@@ -1050,11 +1050,14 @@ function openProductPortion(product, mealType = null, date = null) {
   ['#pp-g', '#pp-cal'].forEach((s) => $(s).addEventListener('input', updateTotal));
 
   $('#pp-add').addEventListener('click', async () => {
+    const name = $('#pp-name').value.trim();
+    if (!name) return toast('Введите название', 'error');
     const grams = num($('#pp-g').value) || 100;
     const body = {
       date: d, meal_type: meal, grams,
+      product_id: product.id || null,
       barcode: product.barcode || null,
-      name: product.name, brand: product.brand || null,
+      name, brand: product.brand || null,
       calories_100: num($('#pp-cal').value),
       proteins_100: num($('#pp-prot').value),
       fats_100: num($('#pp-fat').value),
@@ -1076,6 +1079,11 @@ function openProductPortion(product, mealType = null, date = null) {
 }
 
 /* Поиск продукта в OFF */
+const blankProduct = (name) => ({
+  source: 'custom', id: null, barcode: null, name: name || '', brand: null,
+  calories: 0, proteins: 0, fats: 0, carbohydrates: 0, serving_size_g: null, image_url: null,
+});
+
 function openProductSearch(mealType) {
   const fieldCls = 'w-full bg-ink border border-line rounded-xl pl-10 pr-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
   const inner = `
@@ -1085,9 +1093,8 @@ function openProductSearch(mealType) {
         <span class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted">${ICON.search}</span>
         <input id="ps-q" placeholder="Например, творог 5%" class="${fieldCls}" autocomplete="off" />
       </div>
-      <div id="ps-res" class="space-y-2 max-h-[55vh] overflow-y-auto no-scrollbar">
-        <p class="text-center text-sm text-muted/70 py-8">Введите название продукта</p>
-      </div>
+      <div id="ps-res" class="space-y-2 max-h-[50vh] overflow-y-auto no-scrollbar"></div>
+      <button id="ps-create" class="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-line bg-card text-sm text-accent hover:border-accent/50 transition"><span class="w-4 h-4">${ICON.plus}</span> Создать свой продукт</button>
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
@@ -1095,39 +1102,63 @@ function openProductSearch(mealType) {
   const input = node.querySelector('#ps-q');
   let timer = null, seq = 0;
 
-  const renderResults = (items) => {
-    if (!items.length) { res.innerHTML = `<p class="text-center text-sm text-muted/70 py-8">Ничего не найдено</p>`; return; }
+  const msg = (text, cls = 'text-muted/70') =>
+    { res.innerHTML = `<p class="text-center text-sm ${cls} py-8">${text}</p>`; };
+
+  const renderList = (items, heading) => {
     res.innerHTML = '';
+    if (heading) res.insertAdjacentHTML('beforeend', `<p class="text-[11px] uppercase tracking-wider text-muted px-1 pb-1">${heading}</p>`);
     items.forEach((p) => {
+      const badge = p.source === 'catalog'
+        ? `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">Мои</span>` : '';
       const b = h(`
         <button class="w-full flex items-center gap-3 p-2.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left">
           ${p.image_url ? `<img src="${esc(p.image_url)}" class="w-10 h-10 rounded-lg object-cover shrink-0" loading="lazy" />` : `<span class="w-10 h-10 rounded-lg bg-ink grid place-items-center text-muted shrink-0">${ICON.barcode}</span>`}
-          <div class="min-w-0 flex-1"><p class="text-sm truncate">${esc(p.name)}</p><p class="text-[11px] text-muted truncate">${p.brand ? esc(p.brand) + ' · ' : ''}${fmt(p.calories)} ккал / 100 г</p></div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2"><p class="text-sm truncate">${esc(p.name)}</p>${badge}</div>
+            <p class="text-[11px] text-muted truncate">${p.brand ? esc(p.brand) + ' · ' : ''}${fmt(p.calories)} ккал / 100 г</p>
+          </div>
         </button>`);
       b.addEventListener('click', () => openProductPortion(p, mealType, state.diaryDate));
       res.appendChild(b);
     });
   };
 
+  const showRecent = () => {
+    const recent = (state.products || []).map((p) => ({ ...p, source: 'catalog' }));
+    if (recent.length) renderList(recent.slice(0, 15), 'Недавние');
+    else msg('Введите название или создайте свой продукт');
+  };
+
   const doSearch = async (q) => {
     const my = ++seq;
-    res.innerHTML = `<p class="text-center text-sm text-muted py-8">Ищем…</p>`;
+    msg('Ищем…', 'text-muted');
     try {
       const items = await api(`/api/products/search?q=${encodeURIComponent(q)}`);
       if (my !== seq) return;
-      renderResults(items);
+      if (!items.length) { msg('Ничего не найдено — можно создать свой продукт'); return; }
+      renderList(items);
     } catch (err) {
       if (my !== seq) return;
-      res.innerHTML = `<p class="text-center text-sm text-red-300 py-8">${esc(err.message)}</p>`;
+      msg(esc(err.message), 'text-red-300');
     }
   };
 
   input.addEventListener('input', () => {
     const q = input.value.trim();
     clearTimeout(timer);
-    if (q.length < 2) { seq++; res.innerHTML = `<p class="text-center text-sm text-muted/70 py-8">Введите минимум 2 символа</p>`; return; }
+    seq++;
+    if (q.length < 2) { showRecent(); return; }
     timer = setTimeout(() => doSearch(q), 350);
   });
+
+  node.querySelector('#ps-create').addEventListener('click', () =>
+    openProductPortion(blankProduct(input.value.trim()), mealType, state.diaryDate));
+
+  (async () => {
+    if (state.products === null) await loadProducts();
+    if (input.value.trim().length < 2) showRecent();
+  })();
 
   openModal(node);
   setTimeout(() => input.focus(), 50);
