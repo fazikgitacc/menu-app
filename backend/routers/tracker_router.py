@@ -224,6 +224,7 @@ def set_goal(
     goal.height_cm = payload.height_cm
     goal.weight_kg = payload.weight_kg
     goal.activity = payload.activity
+    goal.mode = payload.mode or "maintenance"
 
     db.commit()
     db.refresh(goal)

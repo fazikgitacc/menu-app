@@ -118,6 +118,7 @@ ICON.drop = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 ICON.target = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-full h-full"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/></svg>';
 ICON.chevL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M15 6l-6 6 6 6"/></svg>';
 ICON.chevR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M9 6l6 6-6 6"/></svg>';
+ICON.calendar = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></svg>';
 
 /* ------------------------- Глобальный лоадер ---------------------------- */
 function showLoader(text) {
@@ -457,7 +458,10 @@ function diaryView() {
       <header style="padding-top: calc(env(safe-area-inset-top) + 1rem)" class="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 pb-3 bg-ink/85 backdrop-blur-md border-b border-line/60">
         <div class="flex items-center justify-between">
           <h1 class="text-lg font-semibold tracking-tight">Дневник</h1>
-          <button data-goal class="flex items-center gap-1.5 text-sm text-muted hover:text-white border border-line rounded-full px-3 py-1.5 bg-card transition"><span class="w-4 h-4">${ICON.target}</span> Цель</button>
+          <div class="flex items-center gap-2">
+            <button data-cal class="w-9 h-9 grid place-items-center rounded-full border border-line bg-card text-muted hover:text-white transition" title="Календарь"><span class="w-4 h-4">${ICON.calendar}</span></button>
+            <button data-goal class="flex items-center gap-1.5 text-sm text-muted hover:text-white border border-line rounded-full px-3 py-1.5 bg-card transition"><span class="w-4 h-4">${ICON.target}</span> Цель</button>
+          </div>
         </div>
         <div class="mt-3 flex items-center justify-between">
           <button data-day="-1" class="w-9 h-9 grid place-items-center rounded-full border border-line bg-card text-muted hover:text-white"><span class="w-5 h-5">${ICON.chevL}</span></button>
@@ -483,17 +487,9 @@ function wireDiary(root) {
     showLoader('Загружаем день…'); await loadDay(); hideLoader(); renderApp();
   }));
   const pick = root.querySelector('[data-pick-date]');
-  if (pick) pick.addEventListener('click', () => {
-    const inp = document.createElement('input');
-    inp.type = 'date'; inp.value = state.diaryDate;
-    inp.className = 'fixed opacity-0 pointer-events-none';
-    document.body.appendChild(inp);
-    inp.addEventListener('change', async () => {
-      if (inp.value) { state.diaryDate = inp.value; showLoader('Загружаем день…'); await loadDay(); hideLoader(); renderApp(); }
-      inp.remove();
-    });
-    inp.showPicker ? inp.showPicker() : inp.click();
-  });
+  if (pick) pick.addEventListener('click', openCalendar);
+  const cal = root.querySelector('[data-cal]');
+  if (cal) cal.addEventListener('click', openCalendar);
   root.querySelectorAll('[data-goal]').forEach((b) => b.addEventListener('click', openGoalModal));
   root.querySelectorAll('[data-water]').forEach((b) => b.addEventListener('click', () => addWater(Number(b.getAttribute('data-water')))));
   root.querySelectorAll('[data-add-meal]').forEach((b) => b.addEventListener('click', () => openAddToMeal(b.getAttribute('data-add-meal'))));
@@ -667,7 +663,36 @@ function openEntryActions(entryId) {
   openModal(node);
 }
 
-/* Цель КБЖУ + калькулятор Миффлина */
+/* Пересчёт Б/Ж/У от калорий и режима (фитнес-логика). */
+function macrosFor(cal, mode, weight) {
+  cal = Math.max(0, cal || 0);
+  let p, f, c; // в ккал
+  if (weight > 0) {
+    if (mode === 'deficit') {
+      p = 2.2 * weight * 4;                 // белок высокий, фиксирован
+      const rest = Math.max(0, cal - p);
+      f = rest * 0.35;                       // дефицит за счёт жиров и углей
+      c = rest * 0.65;
+    } else if (mode === 'gain') {
+      f = 1.0 * weight * 9;                  // жир — норма, фиксирован
+      const rest = Math.max(0, cal - f);
+      p = rest * 0.30;                       // профицит за счёт белков и углей
+      c = rest * 0.70;
+    } else {
+      p = 1.8 * weight * 4;
+      f = 1.0 * weight * 9;
+      c = Math.max(0, cal - p - f);
+    }
+  } else {
+    const split = mode === 'gain' ? [0.30, 0.20, 0.50]
+      : mode === 'deficit' ? [0.40, 0.20, 0.40]
+      : [0.30, 0.30, 0.40];
+    p = cal * split[0]; f = cal * split[1]; c = cal * split[2];
+  }
+  return { proteins: Math.round(p / 4), fats: Math.round(f / 9), carbohydrates: Math.round(c / 4) };
+}
+
+/* Цель КБЖУ + калькулятор Миффлина с режимами */
 function openGoalModal() {
   const g = state.day?.goal || {};
   const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
@@ -675,9 +700,17 @@ function openGoalModal() {
   const actOpt = (val, label) => `<option value="${val}"${Number(g.activity) === val ? ' selected' : ''}>${label}</option>`;
   const sexOpt = (val, label) => `<option value="${val}"${g.sex === val ? ' selected' : ''}>${label}</option>`;
 
+  let mode = g.mode || 'maintenance';
+  const MODES = [['gain', 'Набор'], ['maintenance', 'Поддержание'], ['deficit', 'Дефицит']];
+  const modeBtns = MODES.map(([id, label]) =>
+    `<button data-mode-sel="${id}" class="flex-1 py-2 rounded-lg text-xs sm:text-sm font-medium transition">${label}</button>`
+  ).join('');
+
   const inner = `
     <div class="p-5 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto no-scrollbar">
       <h2 class="text-lg font-semibold">Цель</h2>
+
+      <div class="flex gap-1 p-1 rounded-xl bg-ink border border-line">${modeBtns}</div>
 
       <div class="rounded-2xl bg-card border border-line p-4 space-y-3">
         <p class="text-xs uppercase tracking-wider text-muted">Калькулятор (необязательно)</p>
@@ -688,8 +721,8 @@ function openGoalModal() {
           <div><label class="text-xs text-muted mb-1 block">Вес, кг</label><input id="g-w" inputmode="decimal" value="${gv('weight_kg')}" class="${fieldCls}" /></div>
         </div>
         <div><label class="text-xs text-muted mb-1 block">Активность</label><select id="g-act" class="${fieldCls}">${actOpt(1.2, 'Минимальная')}${actOpt(1.375, 'Лёгкая (1–3 трен/нед)')}${actOpt(1.55, 'Средняя (3–5)')}${actOpt(1.725, 'Высокая (6–7)')}${actOpt(1.9, 'Очень высокая')}</select></div>
-        <button id="g-calc" class="w-full py-2.5 rounded-xl border border-accent/40 bg-accent/10 text-accent text-sm font-medium hover:bg-accent/15 transition">Рассчитать поддержание</button>
-        <p class="text-[11px] text-muted/80">Расчёт даёт норму поддержания веса. Скорректируйте цифры ниже под свою задачу перед сохранением.</p>
+        <button id="g-calc" class="w-full py-2.5 rounded-xl border border-accent/40 bg-accent/10 text-accent text-sm font-medium hover:bg-accent/15 transition">Рассчитать</button>
+        <p class="text-[11px] text-muted/80">Калории — главный рычаг: меняешь их, и Б/Ж/У пересчитываются под режим. Жиры держим на норме или ниже.</p>
       </div>
 
       <div class="rounded-2xl bg-card border border-line p-4 space-y-3">
@@ -707,36 +740,60 @@ function openGoalModal() {
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
+  const $ = (sel) => node.querySelector(sel);
+  const factor = { gain: 1.15, maintenance: 1.0, deficit: 0.80 };
 
-  node.querySelector('#g-calc').addEventListener('click', () => {
-    const sex = node.querySelector('#g-sex').value;
-    const age = num(node.querySelector('#g-age').value);
-    const hcm = num(node.querySelector('#g-h').value);
-    const wkg = num(node.querySelector('#g-w').value);
-    const act = num(node.querySelector('#g-act').value) || 1.2;
-    if (!age || !hcm || !wkg) return toast('Заполните возраст, рост и вес', 'error');
-    const bmr = 10 * wkg + 6.25 * hcm - 5 * age + (sex === 'female' ? -161 : 5);
-    const cal = Math.round(bmr * act);
-    node.querySelector('#g-cal').value = cal;
-    node.querySelector('#g-prot').value = Math.round((cal * 0.30) / 4);
-    node.querySelector('#g-fat').value = Math.round((cal * 0.30) / 9);
-    node.querySelector('#g-carb').value = Math.round((cal * 0.40) / 4);
-    node.querySelector('#g-water').value = Math.round(wkg * 30);
+  const computeTdee = () => {
+    const age = num($('#g-age').value), h = num($('#g-h').value), w = num($('#g-w').value);
+    const act = num($('#g-act').value) || 1.2;
+    if (!age || !h || !w) return 0;
+    const bmr = 10 * w + 6.25 * h - 5 * age + ($('#g-sex').value === 'female' ? -161 : 5);
+    return bmr * act;
+  };
+  const fillMacros = () => {
+    const m = macrosFor(num($('#g-cal').value), mode, num($('#g-w').value));
+    $('#g-prot').value = m.proteins; $('#g-fat').value = m.fats; $('#g-carb').value = m.carbohydrates;
+  };
+  const paintModes = () => node.querySelectorAll('[data-mode-sel]').forEach((b) => {
+    const on = b.getAttribute('data-mode-sel') === mode;
+    b.classList.toggle('bg-accent', on);
+    b.classList.toggle('text-ink', on);
+    b.classList.toggle('text-muted', !on);
+  });
+  paintModes();
+
+  node.querySelectorAll('[data-mode-sel]').forEach((b) => b.addEventListener('click', () => {
+    mode = b.getAttribute('data-mode-sel');
+    paintModes();
+    const tdee = computeTdee();
+    if (tdee > 0) $('#g-cal').value = Math.round(tdee * factor[mode]);
+    fillMacros();
+  }));
+
+  $('#g-calc').addEventListener('click', () => {
+    const tdee = computeTdee();
+    if (!tdee) return toast('Заполните пол, возраст, рост и вес', 'error');
+    $('#g-cal').value = Math.round(tdee * factor[mode]);
+    $('#g-water').value = Math.round(num($('#g-w').value) * 30) || 2000;
+    fillMacros();
     toast('Рассчитано — проверьте и сохраните', 'success');
   });
 
-  node.querySelector('#g-save').addEventListener('click', async () => {
+  $('#g-cal').addEventListener('input', fillMacros);
+
+  $('#g-save').addEventListener('click', async () => {
     const body = {
-      target_calories: num(node.querySelector('#g-cal').value),
-      target_proteins: num(node.querySelector('#g-prot').value),
-      target_fats: num(node.querySelector('#g-fat').value),
-      target_carbohydrates: num(node.querySelector('#g-carb').value),
-      target_water_ml: Math.round(num(node.querySelector('#g-water').value)) || 2000,
-      sex: node.querySelector('#g-sex').value,
-      age: Math.round(num(node.querySelector('#g-age').value)) || null,
-      height_cm: num(node.querySelector('#g-h').value) || null,
-      weight_kg: num(node.querySelector('#g-w').value) || null,
-      activity: num(node.querySelector('#g-act').value) || null,
+      target_calories: num($('#g-cal').value),
+      target_proteins: num($('#g-prot').value),
+      target_fats: num($('#g-fat').value),
+      target_carbohydrates: num($('#g-carb').value),
+      target_water_ml: Math.round(num($('#g-water').value)) || 2000,
+      sex: $('#g-sex').value,
+      age: Math.round(num($('#g-age').value)) || null,
+      height_cm: num($('#g-h').value) || null,
+      weight_kg: num($('#g-w').value) || null,
+      activity: num($('#g-act').value) || null,
+      mode,
     };
     try {
       await api('/api/tracker/goal', { method: 'PUT', json: body });
@@ -745,6 +802,51 @@ function openGoalModal() {
       toast('Цель сохранена', 'success');
     } catch (err) { toast(err.message, 'error'); }
   });
+  openModal(node);
+}
+
+/* Полный календарь выбора дня */
+function openCalendar() {
+  let [vy, vm] = state.diaryDate.split('-').map(Number); // vm: 1-12
+  const node = modalShell('<div id="cal-body" class="p-5 sm:p-6"></div>');
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  const body = node.querySelector('#cal-body');
+
+  const go = async (ds) => {
+    state.diaryDate = ds; closeModal();
+    showLoader('Загружаем день…'); await loadDay(); hideLoader(); renderApp();
+  };
+
+  function draw() {
+    const first = new Date(vy, vm - 1, 1);
+    const startWd = (first.getDay() + 6) % 7;            // Пн = 0
+    const days = new Date(vy, vm, 0).getDate();
+    const monthName = first.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    const today = todayStr();
+    const cells = [];
+    for (let i = 0; i < startWd; i++) cells.push('<div></div>');
+    for (let d = 1; d <= days; d++) {
+      const ds = `${vy}-${String(vm).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const sel = ds === state.diaryDate, tod = ds === today;
+      cells.push(`<button data-pick="${ds}" class="aspect-square rounded-lg text-sm flex items-center justify-center transition ${
+        sel ? 'bg-accent text-ink font-semibold' : tod ? 'border border-accent/50 text-accent' : 'text-gray-200 hover:bg-ink'
+      }">${d}</button>`);
+    }
+    body.innerHTML = `
+      <div class="flex items-center justify-between mb-4">
+        <button id="cal-prev" class="w-9 h-9 grid place-items-center rounded-full border border-line text-muted hover:text-white"><span class="w-5 h-5">${ICON.chevL}</span></button>
+        <p class="text-sm font-medium capitalize">${monthName}</p>
+        <button id="cal-next" class="w-9 h-9 grid place-items-center rounded-full border border-line text-muted hover:text-white"><span class="w-5 h-5">${ICON.chevR}</span></button>
+      </div>
+      <div class="grid grid-cols-7 gap-1 text-center text-[11px] text-muted mb-1">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((w) => `<div>${w}</div>`).join('')}</div>
+      <div class="grid grid-cols-7 gap-1">${cells.join('')}</div>
+      <button id="cal-today" class="mt-4 w-full py-2.5 rounded-xl border border-line text-sm text-accent hover:bg-card transition">Сегодня</button>`;
+    body.querySelector('#cal-prev').onclick = () => { vm--; if (vm < 1) { vm = 12; vy--; } draw(); };
+    body.querySelector('#cal-next').onclick = () => { vm++; if (vm > 12) { vm = 1; vy++; } draw(); };
+    body.querySelector('#cal-today').onclick = () => go(today);
+    body.querySelectorAll('[data-pick]').forEach((b) => { b.onclick = () => go(b.getAttribute('data-pick')); });
+  }
+  draw();
   openModal(node);
 }
 

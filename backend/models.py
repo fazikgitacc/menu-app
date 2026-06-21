@@ -113,6 +113,7 @@ class UserGoal(Base):
     height_cm = Column(Float, nullable=True)
     weight_kg = Column(Float, nullable=True)
     activity = Column(Float, nullable=True)        # коэффициент активности
+    mode = Column(String(16), nullable=True, default="maintenance")  # gain|maintenance|deficit
 
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow

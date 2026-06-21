@@ -119,6 +119,7 @@ class GoalIn(BaseModel):
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
     activity: Optional[float] = None
+    mode: Optional[str] = "maintenance"
 
 
 class GoalOut(GoalIn):
