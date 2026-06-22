@@ -74,7 +74,7 @@ async def search_products(
     return items
 
 
-@router.get("/barcode/{code}", response_model=schemas.OffProduct)
+@router.get("/barcode/{code}", response_model=schemas.ProductSearchItem)
 async def product_by_barcode(
     code: str,
     user: models.User = Depends(get_current_user),
@@ -84,15 +84,31 @@ async def product_by_barcode(
     if not code.isdigit():
         raise HTTPException(status_code=400, detail="Некорректный штрих-код")
 
+    # 1) Личный каталог — мгновенно и с правками пользователя.
+    mine = (
+        db.query(models.UserProduct)
+        .filter(models.UserProduct.user_id == user.id, models.UserProduct.barcode == code)
+        .first()
+    )
+    if mine:
+        return schemas.ProductSearchItem(
+            source="catalog", id=mine.id, barcode=mine.barcode, name=mine.name, brand=mine.brand,
+            calories=mine.calories, proteins=mine.proteins, fats=mine.fats,
+            carbohydrates=mine.carbohydrates, serving_size_g=mine.serving_size_g,
+            image_url=mine.image_url,
+        )
+
+    # 2) Общий кэш OFF.
     cached = db.query(models.FoodCache).filter(models.FoodCache.barcode == code).first()
     if cached:
-        return schemas.OffProduct(
-            barcode=cached.barcode, name=cached.name, brand=cached.brand,
+        return schemas.ProductSearchItem(
+            source="off", barcode=cached.barcode, name=cached.name, brand=cached.brand,
             calories=cached.calories, proteins=cached.proteins, fats=cached.fats,
             carbohydrates=cached.carbohydrates, serving_size_g=cached.serving_size_g,
             image_url=cached.image_url,
         )
 
+    # 3) Запрос в OFF + запись в кэш.
     try:
         product = await off.by_barcode(code)
     except Exception:
@@ -107,7 +123,12 @@ async def product_by_barcode(
         serving_size_g=product.get("serving_size_g"), image_url=product.get("image_url"),
     ))
     db.commit()
-    return product
+    return schemas.ProductSearchItem(
+        source="off", barcode=product.get("barcode"), name=product["name"], brand=product.get("brand"),
+        calories=product["calories"], proteins=product["proteins"], fats=product["fats"],
+        carbohydrates=product["carbohydrates"], serving_size_g=product.get("serving_size_g"),
+        image_url=product.get("image_url"),
+    )
 
 
 # --------------------------- Личный каталог -------------------------------

@@ -115,6 +115,7 @@ ICON.edit = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 ICON.grid = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-full h-full"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="8" rx="1.6"/><rect x="3" y="13" width="8" height="8" rx="1.6"/><rect x="13" y="13" width="8" height="8" rx="1.6"/></svg>';
 ICON.book = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M5 4a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2z"/><path d="M9 7h6M9 11h6"/></svg>';
 ICON.barcode = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" class="w-5 h-5"><path d="M4 6v12M7.5 6v12M11 6v12M14 6v12M17 6v12M20 6v12"/></svg>';
+ICON.camera = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M4 8a2 2 0 0 1 2-2h1.5l1-1.5h5l1 1.5H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.2"/></svg>';
 ICON.drop = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" class="w-full h-full"><path d="M12 3s6 6.6 6 11a6 6 0 1 1-12 0c0-4.4 6-11 6-11z"/></svg>';
 ICON.target = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-full h-full"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/></svg>';
 ICON.chevL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full"><path d="M15 6l-6 6 6 6"/></svg>';
@@ -153,7 +154,9 @@ function openModal(contentNode) {
   document.getElementById('modal-root').appendChild(overlay);
   document.body.style.overflow = 'hidden';
 }
+let activeScanner = null;   // функция остановки камеры, если открыт сканер
 function closeModal() {
+  if (activeScanner) { try { activeScanner(); } catch (_) {} activeScanner = null; }
   const m = document.getElementById('modal');
   if (m) m.remove();
   document.body.style.overflow = '';
@@ -525,7 +528,7 @@ function openAddToMeal(mealType) {
       <div class="space-y-2">
         <button data-src="dish" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.grid}</span><div><p class="text-sm font-medium">Из меню</p><p class="text-xs text-muted">Готовое блюдо из вашего меню</p></div></button>
         <button data-src="search" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.search}</span><div><p class="text-sm font-medium">Поиск продукта</p><p class="text-xs text-muted">База Open Food Facts</p></div></button>
-        <button data-src="barcode" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.barcode}</span><div><p class="text-sm font-medium">Штрих-код</p><p class="text-xs text-muted">Ввести номер штрих-кода</p></div></button>
+        <button data-src="barcode" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.barcode}</span><div><p class="text-sm font-medium">Штрих-код</p><p class="text-xs text-muted">Сканировать камерой или ввести номер</p></div></button>
         <button data-src="custom" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.edit}</span><div><p class="text-sm font-medium">Вручную</p><p class="text-xs text-muted">Ввести название и КБЖУ</p></div></button>
         <div class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line/60 bg-card/50 text-left opacity-50"><span class="text-muted w-5 h-5">${ICON.image}</span><div><p class="text-sm font-medium">По фото</p><p class="text-xs text-muted">Скоро</p></div></div>
       </div>
@@ -534,7 +537,7 @@ function openAddToMeal(mealType) {
   node.querySelector('[data-close]').addEventListener('click', closeModal);
   node.querySelector('[data-src="dish"]').addEventListener('click', () => openPickDish(mealType));
   node.querySelector('[data-src="search"]').addEventListener('click', () => openProductSearch(mealType));
-  node.querySelector('[data-src="barcode"]').addEventListener('click', () => openBarcodeManual(mealType));
+  node.querySelector('[data-src="barcode"]').addEventListener('click', () => openBarcodeScanner(mealType));
   node.querySelector('[data-src="custom"]').addEventListener('click', () => openCustomEntry(mealType));
   openModal(node);
 }
@@ -1107,8 +1110,8 @@ function openProductPortion(product, mealType = null, date = null) {
 }
 
 /* Поиск продукта в OFF */
-const blankProduct = (name) => ({
-  source: 'custom', id: null, barcode: null, name: name || '', brand: null,
+const blankProduct = (name, barcode = null) => ({
+  source: 'custom', id: null, barcode: barcode || null, name: name || '', brand: null,
   calories: 0, proteins: 0, fats: 0, carbohydrates: 0, serving_size_g: null, image_url: null,
 });
 
@@ -1192,7 +1195,106 @@ function openProductSearch(mealType) {
   setTimeout(() => input.focus(), 50);
 }
 
-/* Ручной ввод штрих-кода */
+/* Общий разбор найденного штрих-кода: каталог/кэш/OFF, при 404 — создать со штрих-кодом */
+async function lookupBarcode(code, mealType) {
+  showLoader('Ищем продукт…');
+  try {
+    const p = await api(`/api/products/barcode/${code}`);
+    hideLoader();
+    openProductPortion(p, mealType, state.diaryDate);
+  } catch (err) {
+    hideLoader();
+    if (err.status === 404) {
+      toast('Не найдено — добавьте вручную', 'info');
+      openProductPortion(blankProduct('', code), mealType, state.diaryDate);
+    } else {
+      toast(err.message || 'Ошибка поиска', 'error');
+    }
+  }
+}
+
+function loadZXing() {
+  return new Promise((resolve, reject) => {
+    if (window.ZXing) return resolve(window.ZXing);
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+    s.async = true;
+    s.onload = () => (window.ZXing ? resolve(window.ZXing) : reject(new Error('Сканер не загрузился')));
+    s.onerror = () => reject(new Error('Не удалось загрузить сканер'));
+    document.head.appendChild(s);
+  });
+}
+
+/* Сканирование штрих-кода камерой (ZXing) */
+function openBarcodeScanner(mealType) {
+  const inner = `
+    <div class="p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-1">Сканирование</h2>
+      <p class="text-sm text-muted mb-4">Наведите камеру на штрих-код продукта</p>
+      <div class="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
+        <video id="scan-video" playsinline muted autoplay class="w-full h-full object-cover"></video>
+        <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div class="w-4/5 h-28 border-2 border-accent/80 rounded-xl"></div>
+        </div>
+        <div id="scan-status" class="absolute bottom-0 inset-x-0 p-3 text-center text-xs text-white/90 bg-gradient-to-t from-black/70 to-transparent">Запуск камеры…</div>
+      </div>
+      <button id="scan-manual" class="mt-4 w-full py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition flex items-center justify-center gap-2"><span class="w-4 h-4">${ICON.edit}</span> Ввести номер вручную</button>
+    </div>`;
+  const node = modalShell(inner);
+  const video = node.querySelector('#scan-video');
+  const status = node.querySelector('#scan-status');
+  let reader = null, stopped = false;
+
+  const stop = () => {
+    stopped = true;
+    try { reader && reader.reset(); } catch (_) {}
+    const s = video && video.srcObject;
+    if (s && s.getTracks) s.getTracks().forEach((t) => t.stop());
+  };
+
+  node.querySelector('[data-close]').addEventListener('click', () => closeModal());
+  node.querySelector('#scan-manual').addEventListener('click', () => { stop(); openBarcodeManual(mealType); });
+
+  openModal(node);          // закроет предыдущее окно (на этом этапе сканер ещё не активен)
+  activeScanner = stop;     // теперь любое закрытие окна остановит камеру
+
+  (async () => {
+    let ZX;
+    try { ZX = await loadZXing(); }
+    catch (_) { status.textContent = 'Сканер недоступен — нажмите «Ввести вручную».'; return; }
+    if (stopped) return;
+    try {
+      const hints = new Map();
+      hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [
+        ZX.BarcodeFormat.EAN_13, ZX.BarcodeFormat.EAN_8,
+        ZX.BarcodeFormat.UPC_A, ZX.BarcodeFormat.UPC_E,
+      ]);
+      reader = new ZX.BrowserMultiFormatReader(hints);
+      status.textContent = 'Наведите на штрих-код';
+      await reader.decodeFromConstraints(
+        { video: { facingMode: { ideal: 'environment' } } },
+        video,
+        (result) => {
+          if (!result || stopped) return;
+          const code = (result.getText && result.getText()) || result.text || '';
+          if (!/^\d{6,}$/.test(code)) return;
+          stop();
+          if (navigator.vibrate) navigator.vibrate(60);
+          closeModal();
+          lookupBarcode(code, mealType);
+        }
+      );
+    } catch (e) {
+      if (stopped) return;
+      const name = e && e.name;
+      status.textContent = (name === 'NotAllowedError')
+        ? 'Нет доступа к камере. Разрешите доступ или введите номер вручную.'
+        : 'Камера недоступна — нажмите «Ввести вручную».';
+    }
+  })();
+}
+
+/* Ручной ввод штрих-кода (запасной вариант) */
 function openBarcodeManual(mealType) {
   const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
   const inner = `
@@ -1201,24 +1303,18 @@ function openBarcodeManual(mealType) {
       <p class="text-sm text-muted mb-4">Введите номер под штрих-кодом (EAN/UPC)</p>
       <input id="bc" inputmode="numeric" placeholder="Например, 4600000000000" class="${fieldCls} mb-3" autocomplete="off" />
       <button id="bc-find" class="w-full py-3 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Найти</button>
-      <p class="text-[11px] text-muted/70 mt-3">Сканирование камерой добавим в следующем обновлении.</p>
+      <button id="bc-scan" class="mt-2 w-full py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition flex items-center justify-center gap-2"><span class="w-4 h-4">${ICON.camera}</span> Сканировать камерой</button>
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
-  const find = async () => {
+  const find = () => {
     const code = node.querySelector('#bc').value.trim();
     if (!/^\d{6,}$/.test(code)) return toast('Введите корректный штрих-код', 'error');
-    showLoader('Ищем в Open Food Facts…');
-    try {
-      const p = await api(`/api/products/barcode/${code}`);
-      hideLoader();
-      openProductPortion(p, mealType, state.diaryDate);
-    } catch (err) {
-      hideLoader();
-      toast(err.status === 404 ? 'Продукт не найден в базе' : err.message, 'error');
-    }
+    lookupBarcode(code, mealType);
   };
   node.querySelector('#bc-find').addEventListener('click', find);
+  node.querySelector('#bc').addEventListener('keydown', (e) => { if (e.key === 'Enter') find(); });
+  node.querySelector('#bc-scan').addEventListener('click', () => openBarcodeScanner(mealType));
   openModal(node);
   setTimeout(() => node.querySelector('#bc').focus(), 50);
 }
