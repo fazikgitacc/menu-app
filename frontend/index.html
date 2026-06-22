@@ -2,7 +2,7 @@
 <html lang="ru" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Домашнее меню</title>
   <meta name="description" content="Личное домашнее меню с подсчётом КБЖУ и генерацией изображений блюд." />
 
@@ -49,7 +49,20 @@
 
   <style>
     html, body { background: #0d0f12; }
-    body { -webkit-tap-highlight-color: transparent; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;   /* без двойного тап-зума */
+      overscroll-behavior: none;     /* без «резинки» и pull-to-refresh */
+    }
+    /* Текст, который должно быть можно выделять/копировать и вводить */
+    input, textarea, select, [contenteditable="true"], .recipe, .selectable {
+      -webkit-user-select: text;
+      user-select: text;
+    }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     .safe-b { padding-bottom: calc(env(safe-area-inset-bottom) + 1rem); }
@@ -68,6 +81,12 @@
   <div id="modal-root"></div>
   <div id="toast-root" style="top: calc(env(safe-area-inset-top) + 0.75rem)" class="fixed left-1/2 -translate-x-1/2 z-[120] flex flex-col items-center gap-2 px-3 w-full max-w-sm"></div>
 
+  <script>
+    // App-like: блокируем пинч-зум (iOS Safari/PWA). Двойной тап-зум убирает touch-action.
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach((ev) =>
+      document.addEventListener(ev, (e) => e.preventDefault())
+    );
+  </script>
   <script src="/app.js"></script>
 </body>
 </html>

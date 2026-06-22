@@ -218,6 +218,9 @@ def add_entry_from_product(
     db.commit()
     db.refresh(entry)
     return entry
+
+
+@router.put("/entries/{entry_id}", response_model=schemas.MealEntryOut)
 def update_entry(
     entry_id: int,
     payload: schemas.MealEntryUpdate,

@@ -162,7 +162,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal
 
 function modalShell(innerHTML) {
   return h(`
-    <div class="fadein relative w-full sm:max-w-4xl bg-graphite sm:rounded-2xl border border-line shadow-soft min-h-screen sm:min-h-0">
+    <div style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)" class="fadein relative w-full sm:max-w-4xl bg-graphite sm:rounded-2xl border border-line shadow-soft min-h-screen sm:min-h-0">
       <button data-close style="top: calc(env(safe-area-inset-top) + 0.75rem)" class="absolute right-4 z-10 w-9 h-9 grid place-items-center rounded-full bg-ink/70 border border-line text-muted hover:text-white">${ICON.close}</button>
       ${innerHTML}
     </div>`);
@@ -437,14 +437,23 @@ function diaryView() {
     const items = (day.meals && day.meals[m.id]) || [];
     const kcal = items.reduce((s, e) => s + (e.calories || 0), 0);
     const rows = items.length
-      ? items.map((e) => `
-          <button data-entry="${e.id}" class="w-full flex items-center justify-between px-4 py-2.5 border-t border-line/60 text-left hover:bg-cardhi/40 transition">
-            <div class="min-w-0 pr-3">
-              <p class="text-sm truncate">${esc(e.name)}</p>
-              <p class="text-[11px] text-muted">${fmt(e.amount)} ${e.unit === 'serving' ? 'порц.' : e.unit === 'ml' ? 'мл' : 'г'}</p>
+      ? items.map((e) => {
+          const unit = e.unit === 'serving' ? 'порц.' : e.unit === 'ml' ? 'мл' : 'г';
+          return `
+          <button data-entry="${e.id}" class="block w-full px-4 py-2.5 border-t border-line/60 text-left hover:bg-cardhi/40 transition">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm truncate min-w-0">${esc(e.name)}</p>
+              <span class="text-sm text-accent shrink-0">${fmt(e.calories)} ккал</span>
             </div>
-            <span class="text-sm text-accent shrink-0">${fmt(e.calories)} ккал</span>
-          </button>`).join('')
+            <div class="flex items-center gap-2 mt-0.5 text-[11px] whitespace-nowrap">
+              <span class="text-muted">${fmt(e.amount)} ${unit}</span>
+              <span class="text-line">·</span>
+              <span class="text-prot">Б ${fmt(e.proteins)}</span>
+              <span class="text-fat">Ж ${fmt(e.fats)}</span>
+              <span class="text-carb">У ${fmt(e.carbohydrates)}</span>
+            </div>
+          </button>`;
+        }).join('')
       : `<p class="px-4 py-3 border-t border-line/60 text-xs text-muted/70">Пусто</p>`;
     return `
       <section class="rounded-2xl bg-card border border-line overflow-hidden">
