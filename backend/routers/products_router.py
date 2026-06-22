@@ -1,12 +1,13 @@
 """Эндпоинты продуктов: поиск в OFF, штрих-код (с кэшем) и личный каталог «Продукты»."""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 import models
 import off
 import schemas
+import vision
 from auth import get_current_user
 from database import get_db
 
@@ -129,6 +130,34 @@ async def product_by_barcode(
         carbohydrates=product["carbohydrates"], serving_size_g=product.get("serving_size_g"),
         image_url=product.get("image_url"),
     )
+
+
+# --------------------------- Оценка по фото -------------------------------
+
+@router.post("/estimate-photo", response_model=schemas.PhotoEstimate)
+async def estimate_photo(
+    image: UploadFile = File(...),
+    user: models.User = Depends(get_current_user),
+):
+    """Оценивает КБЖУ блюда по фото (экспериментально, бесплатная vision-модель)."""
+    raw = await image.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Пустой файл")
+    if len(raw) > 8_000_000:
+        raise HTTPException(status_code=413, detail="Слишком большое изображение")
+
+    try:
+        est = await vision.estimate_food_from_image(raw, image.content_type or "image/jpeg")
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось распознать фото. Попробуйте ещё раз или введите вручную.",
+        )
+
+    has_data = any([est["calories"], est["proteins"], est["fats"], est["carbohydrates"]])
+    if not est["name"] and not has_data:
+        raise HTTPException(status_code=422, detail="На фото не распознана еда")
+    return schemas.PhotoEstimate(**est)
 
 
 # --------------------------- Личный каталог -------------------------------

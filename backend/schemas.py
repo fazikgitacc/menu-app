@@ -153,6 +153,16 @@ class OffProduct(BaseModel):
     image_url: Optional[str] = None
 
 
+class PhotoEstimate(BaseModel):
+    """Оценка КБЖУ по фото (на всю порцию). Экспериментально."""
+    name: str = ""
+    calories: float = 0
+    proteins: float = 0
+    fats: float = 0
+    carbohydrates: float = 0
+    confidence: str = "low"
+
+
 class ProductSearchItem(BaseModel):
     """Элемент выдачи поиска: из личного каталога ('catalog') или из OFF ('off')."""
     source: str

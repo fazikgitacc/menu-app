@@ -530,7 +530,7 @@ function openAddToMeal(mealType) {
         <button data-src="search" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.search}</span><div><p class="text-sm font-medium">Поиск продукта</p><p class="text-xs text-muted">База Open Food Facts</p></div></button>
         <button data-src="barcode" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.barcode}</span><div><p class="text-sm font-medium">Штрих-код</p><p class="text-xs text-muted">Сканировать камерой или ввести номер</p></div></button>
         <button data-src="custom" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.edit}</span><div><p class="text-sm font-medium">Вручную</p><p class="text-xs text-muted">Ввести название и КБЖУ</p></div></button>
-        <div class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line/60 bg-card/50 text-left opacity-50"><span class="text-muted w-5 h-5">${ICON.image}</span><div><p class="text-sm font-medium">По фото</p><p class="text-xs text-muted">Скоро</p></div></div>
+        <button data-src="photo" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.image}</span><div><p class="text-sm font-medium">По фото</p><p class="text-xs text-muted">Оценка калорий ИИ · эксперимент</p></div></button>
       </div>
     </div>`;
   const node = modalShell(inner);
@@ -539,6 +539,7 @@ function openAddToMeal(mealType) {
   node.querySelector('[data-src="search"]').addEventListener('click', () => openProductSearch(mealType));
   node.querySelector('[data-src="barcode"]').addEventListener('click', () => openBarcodeScanner(mealType));
   node.querySelector('[data-src="custom"]').addEventListener('click', () => openCustomEntry(mealType));
+  node.querySelector('[data-src="photo"]').addEventListener('click', () => openPhotoFlow(mealType));
   openModal(node);
 }
 
@@ -1317,6 +1318,112 @@ function openBarcodeManual(mealType) {
   node.querySelector('#bc-scan').addEventListener('click', () => openBarcodeScanner(mealType));
   openModal(node);
   setTimeout(() => node.querySelector('#bc').focus(), 50);
+}
+
+/* ------------------------- Оценка калорий по фото ------------------------ */
+function compressImage(file, maxDim = 1024, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width >= height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+      else if (height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Не удалось обработать фото'))), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось открыть фото')); };
+    img.src = url;
+  });
+}
+
+function openPhotoFlow(mealType) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.className = 'hidden';
+  document.body.appendChild(input);
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    input.remove();
+    if (!file) return;
+    showLoader('Анализируем фото…');
+    try {
+      const blob = await compressImage(file);
+      const fd = new FormData();
+      fd.append('image', blob, 'photo.jpg');
+      const est = await apiForm('/api/products/estimate-photo', fd);
+      hideLoader();
+      openPhotoReview(est, mealType);
+    } catch (err) {
+      hideLoader();
+      toast(err.message || 'Не удалось распознать фото', 'error');
+    }
+  });
+  input.click();
+}
+
+function openPhotoReview(est, mealType) {
+  const d = state.diaryDate || todayStr();
+  let meal = mealType || guessMeal();
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+  const conf = ({ high: ['высокая', 'text-emerald-300'], medium: ['средняя', 'text-amber-300'], low: ['низкая', 'text-red-300'] })[est.confidence] || ['низкая', 'text-red-300'];
+  const mealBtns = MEALS.map((m) => `<button data-meal="${m.id}" class="py-2 rounded-lg text-xs font-medium transition">${m.label}</button>`).join('');
+
+  const inner = `
+    <div class="p-5 sm:p-6 space-y-3 max-h-[85vh] overflow-y-auto no-scrollbar">
+      <h2 class="text-lg font-semibold">Оценка по фото</h2>
+      <div class="flex items-start gap-2 text-xs rounded-xl bg-card border border-line px-3 py-2.5">
+        <span class="w-4 h-4 shrink-0 ${conf[1]}">${ICON.spark}</span>
+        <span class="text-muted">Оценка приблизительная · уверенность: <span class="${conf[1]}">${conf[0]}</span>. Проверьте и поправьте значения перед сохранением.</span>
+      </div>
+      <div><label class="text-xs text-muted mb-1 block">Название</label><input id="ph-name" value="${esc(est.name || '')}" placeholder="Что на фото" class="${fieldCls}" /></div>
+      <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink border border-line">${mealBtns}</div>
+      <div class="rounded-2xl bg-card border border-line p-4">
+        <p class="text-xs uppercase tracking-wider text-muted mb-3">КБЖУ порции</p>
+        <div class="mb-3"><label class="text-xs text-muted mb-1 block">Калории</label><input id="ph-cal" inputmode="decimal" value="${esc(String(est.calories || 0))}" class="${fieldCls}" /></div>
+        <div class="grid grid-cols-3 gap-2">
+          <div><label class="text-xs text-prot mb-1 block">Белки</label><input id="ph-prot" inputmode="decimal" value="${esc(String(est.proteins || 0))}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-fat mb-1 block">Жиры</label><input id="ph-fat" inputmode="decimal" value="${esc(String(est.fats || 0))}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input id="ph-carb" inputmode="decimal" value="${esc(String(est.carbohydrates || 0))}" class="${fieldCls}" /></div>
+        </div>
+      </div>
+      <button id="ph-add" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Добавить в дневник</button>
+    </div>`;
+  const node = modalShell(inner);
+  node.querySelector('[data-close]').addEventListener('click', closeModal);
+  const $ = (s) => node.querySelector(s);
+
+  const paintMeal = () => node.querySelectorAll('[data-meal]').forEach((b) => {
+    const on = b.getAttribute('data-meal') === meal;
+    b.classList.toggle('bg-accent', on); b.classList.toggle('text-ink', on); b.classList.toggle('text-muted', !on);
+  });
+  paintMeal();
+  node.querySelectorAll('[data-meal]').forEach((b) => b.addEventListener('click', () => { meal = b.getAttribute('data-meal'); paintMeal(); }));
+
+  // Правка Б/Ж/У пересчитывает калории.
+  const recalc = () => { $('#ph-cal').value = Math.round(num($('#ph-prot').value) * 4 + num($('#ph-fat').value) * 9 + num($('#ph-carb').value) * 4); };
+  ['#ph-prot', '#ph-fat', '#ph-carb'].forEach((s) => $(s).addEventListener('input', recalc));
+
+  $('#ph-add').addEventListener('click', async () => {
+    const name = $('#ph-name').value.trim();
+    if (!name) return toast('Введите название', 'error');
+    try {
+      await api('/api/tracker/entries', { method: 'POST', json: {
+        date: d, meal_type: meal, name, amount: 1, unit: 'serving', source_type: 'photo',
+        calories: num($('#ph-cal').value), proteins: num($('#ph-prot').value),
+        fats: num($('#ph-fat').value), carbohydrates: num($('#ph-carb').value),
+      } });
+      closeModal();
+      toast('Добавлено в дневник', 'success');
+      if (state.tab === 'diary' && state.diaryDate === d) await reloadDay();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(node);
 }
 
 /* --------------------------- Нижняя навигация --------------------------- */
