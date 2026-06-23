@@ -27,11 +27,14 @@ COOKIE_NAME = os.getenv("COOKIE_NAME", "access_token")
 # В проде (HTTPS) выставить COOKIE_SECURE=true
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
-# --- Hugging Face (text-to-image) ---
-HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
-HF_MODEL = os.getenv("HF_MODEL", "stabilityai/stable-diffusion-xl-base-1.0")
-# Можно полностью переопределить URL инференса (напр. router.huggingface.co/...).
-HF_API_URL = os.getenv("HF_API_URL", "") or f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+# --- Генерация картинок: Pollinations.ai (Flux), бесплатно, без ключа ---
+POLLINATIONS_BASE = os.getenv("POLLINATIONS_BASE", "https://image.pollinations.ai/prompt")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "flux")
+IMAGE_WIDTH = int(os.getenv("IMAGE_WIDTH", "768"))
+IMAGE_HEIGHT = int(os.getenv("IMAGE_HEIGHT", "768"))
+IMAGE_TIMEOUT = float(os.getenv("IMAGE_TIMEOUT", "150"))
+# Необязательный ключ Pollinations (pk_/sk_) для повышенных лимитов; для базовой работы не нужен.
+POLLINATIONS_TOKEN = os.getenv("POLLINATIONS_TOKEN", "")
 
 # --- Загрузка файлов ---
 MAX_IMAGE_MB = int(os.getenv("MAX_IMAGE_MB", "10"))

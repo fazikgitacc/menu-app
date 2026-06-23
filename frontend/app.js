@@ -11,6 +11,7 @@ const state = {
   user: null,
   dishes: [],
   category: 'Все',
+  menuQuery: '',        // поиск блюд по названию
   tab: 'menu',          // 'menu' | 'diary'
   menuMode: 'dishes',   // 'dishes' | 'products'
   diaryDate: null,      // 'YYYY-MM-DD'
@@ -311,7 +312,12 @@ function menuView() {
           ${segBtn('dishes', 'Блюда')}${segBtn('products', 'Продукты')}
         </div>
 
-        ${isProducts ? '' : `<div id="tabs" class="mt-3 flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1"></div>`}
+        ${isProducts ? '' : `
+        <div id="tabs" class="mt-3 flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1"></div>
+        <div class="relative mt-3">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted">${ICON.search}</span>
+          <input id="dish-search" value="${esc(state.menuQuery || '')}" placeholder="Поиск блюд по названию" autocomplete="off" class="w-full bg-ink border border-line rounded-xl pl-9 pr-3 py-2 text-sm outline-none focus:border-accent/60 transition" />
+        </div>`}
       </header>
 
       ${body}
@@ -336,6 +342,18 @@ function wireMenu(root) {
   const randomBtn = root.querySelector('#random-btn');
   if (randomBtn) randomBtn.addEventListener('click', openRandomModal);
   root.querySelector('#profile-btn').addEventListener('click', openProfileModal);
+
+  const search = root.querySelector('#dish-search');
+  if (search) {
+    let t = null;
+    search.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        state.menuQuery = search.value.trim();
+        try { await loadDishes(); renderGrid(); } catch (_) {}
+      }, 300);
+    });
+  }
 }
 
 /* -------------------------- Экран «Дневник» ----------------------------- */
@@ -521,26 +539,101 @@ async function addWater(ml) {
 /* Выбор способа добавления в приём пищи */
 function openAddToMeal(mealType) {
   const label = (MEALS.find((m) => m.id === mealType) || {}).label || '';
+  const modes = [
+    { id: 'search', label: 'Поиск', icon: ICON.search },
+    { id: 'photo', label: 'Камера', icon: ICON.camera },
+    { id: 'barcode', label: 'Штрих-код', icon: ICON.barcode },
+    { id: 'dish', label: 'Из меню', icon: ICON.grid },
+    { id: 'manual', label: 'Вручную', icon: ICON.edit },
+  ];
+  const tabBtn = (m) => `
+    <button data-mode="${m.id}" class="shrink-0 w-[4.5rem] flex flex-col items-center gap-1.5">
+      <span data-tile class="w-14 h-14 grid place-items-center rounded-2xl border transition"><span class="w-6 h-6">${m.icon}</span></span>
+      <span data-lbl class="text-[11px] transition">${m.label}</span>
+    </button>`;
+  const fieldCls = 'w-full bg-ink border border-line rounded-xl pl-10 pr-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
+
   const inner = `
     <div class="p-5 sm:p-6">
-      <h2 class="text-lg font-semibold mb-1">Добавить — ${esc(label)}</h2>
-      <p class="text-sm text-muted mb-4">Выберите источник</p>
-      <div class="space-y-2">
-        <button data-src="dish" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.grid}</span><div><p class="text-sm font-medium">Из меню</p><p class="text-xs text-muted">Готовое блюдо из вашего меню</p></div></button>
-        <button data-src="search" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.search}</span><div><p class="text-sm font-medium">Поиск продукта</p><p class="text-xs text-muted">База Open Food Facts</p></div></button>
-        <button data-src="barcode" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.barcode}</span><div><p class="text-sm font-medium">Штрих-код</p><p class="text-xs text-muted">Сканировать камерой или ввести номер</p></div></button>
-        <button data-src="custom" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.edit}</span><div><p class="text-sm font-medium">Вручную</p><p class="text-xs text-muted">Ввести название и КБЖУ</p></div></button>
-        <button data-src="photo" class="w-full flex items-center gap-3 p-3.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left"><span class="text-accent w-5 h-5">${ICON.image}</span><div><p class="text-sm font-medium">По фото</p><p class="text-xs text-muted">Оценка калорий ИИ · эксперимент</p></div></button>
+      <h2 class="text-lg font-semibold mb-3">Добавить — ${esc(label)}</h2>
+      <div class="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">${modes.map(tabBtn).join('')}</div>
+      <div class="relative mt-4 mb-3">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted">${ICON.search}</span>
+        <input id="am-q" placeholder="Что вы ели на ${esc(label.toLowerCase())}?" class="${fieldCls}" autocomplete="off" />
       </div>
+      <div id="am-res" class="space-y-2 max-h-[46vh] overflow-y-auto no-scrollbar"></div>
+      <button id="am-create" class="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-line bg-card text-sm text-accent hover:border-accent/50 transition"><span class="w-4 h-4">${ICON.plus}</span> Создать свой продукт</button>
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
-  node.querySelector('[data-src="dish"]').addEventListener('click', () => openPickDish(mealType));
-  node.querySelector('[data-src="search"]').addEventListener('click', () => openProductSearch(mealType));
-  node.querySelector('[data-src="barcode"]').addEventListener('click', () => openBarcodeScanner(mealType));
-  node.querySelector('[data-src="custom"]').addEventListener('click', () => openCustomEntry(mealType));
-  node.querySelector('[data-src="photo"]').addEventListener('click', () => openPhotoFlow(mealType));
+  const input = node.querySelector('#am-q');
+
+  const paintTabs = (active) => node.querySelectorAll('[data-mode]').forEach((b) => {
+    const on = b.getAttribute('data-mode') === active;
+    const tile = b.querySelector('[data-tile]');
+    const lbl = b.querySelector('[data-lbl]');
+    tile.classList.toggle('bg-accent', on); tile.classList.toggle('text-ink', on); tile.classList.toggle('border-accent', on);
+    tile.classList.toggle('bg-card', !on); tile.classList.toggle('text-accent', !on); tile.classList.toggle('border-line', !on);
+    lbl.classList.toggle('text-white', on); lbl.classList.toggle('text-muted', !on);
+  });
+  paintTabs('search');
+
+  node.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+    const m = b.getAttribute('data-mode');
+    if (m === 'search') { input.focus(); return; }
+    if (m === 'dish') openPickDish(mealType);
+    else if (m === 'barcode') openBarcodeScanner(mealType);
+    else if (m === 'photo') openPhotoFlow(mealType);
+    else if (m === 'manual') openProductPortion(blankProduct(input.value.trim()), mealType, state.diaryDate);
+  }));
+
+  // Встроенный поиск (каталог + OFF), как в openProductSearch.
+  const res = node.querySelector('#am-res');
+  let timer = null, seq = 0;
+  const msg = (text, cls = 'text-muted/70') => { res.innerHTML = `<p class="text-center text-sm ${cls} py-8">${text}</p>`; };
+  const renderList = (items, heading) => {
+    res.innerHTML = '';
+    if (heading) res.insertAdjacentHTML('beforeend', `<p class="text-[11px] uppercase tracking-wider text-muted px-1 pb-1">${heading}</p>`);
+    items.forEach((p) => {
+      const badge = p.source === 'catalog' ? `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">Мои</span>` : '';
+      const b = h(`
+        <button class="w-full flex items-center gap-3 p-2.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left">
+          ${p.image_url ? `<img src="${esc(p.image_url)}" class="w-10 h-10 rounded-lg object-cover shrink-0" loading="lazy" />` : `<span class="w-10 h-10 rounded-lg bg-ink grid place-items-center text-muted shrink-0">${ICON.barcode}</span>`}
+          <div class="min-w-0 flex-1"><div class="flex items-center gap-2"><p class="text-sm truncate">${esc(p.name)}</p>${badge}</div><p class="text-[11px] text-muted truncate">${p.brand ? esc(p.brand) + ' · ' : ''}${fmt(p.calories)} ккал / 100 г</p></div>
+          <span class="text-accent w-5 h-5 shrink-0">${ICON.plus}</span>
+        </button>`);
+      b.addEventListener('click', () => openProductPortion(p, mealType, state.diaryDate));
+      res.appendChild(b);
+    });
+  };
+  const showRecent = () => {
+    const recent = (state.products || []).map((p) => ({ ...p, source: 'catalog' }));
+    if (recent.length) renderList(recent.slice(0, 15), 'Недавние');
+    else msg('Найдите продукт в базе или создайте свой');
+  };
+  const doSearch = async (q) => {
+    const my = ++seq;
+    msg('Ищем…', 'text-muted');
+    try {
+      const items = await api(`/api/products/search?q=${encodeURIComponent(q)}`);
+      if (my !== seq) return;
+      if (!items.length) { msg('Ничего не найдено — можно создать свой продукт'); return; }
+      renderList(items);
+    } catch (err) { if (my !== seq) return; msg(esc(err.message), 'text-red-300'); }
+  };
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(timer); seq++;
+    if (q.length < 2) { showRecent(); return; }
+    timer = setTimeout(() => doSearch(q), 350);
+  });
+  node.querySelector('#am-create').addEventListener('click', () =>
+    openProductPortion(blankProduct(input.value.trim()), mealType, state.diaryDate));
+
+  (async () => { if (state.products === null) await loadProducts(); if (input.value.trim().length < 2) showRecent(); })();
+
   openModal(node);
+  setTimeout(() => input.focus(), 60);
 }
 
 /* Список блюд меню для добавления в дневник */
@@ -625,6 +718,17 @@ function openCustomEntry(mealType, existing = null) {
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
+
+  // Ввод Б/Ж/У автоматически считает калории.
+  const recalcF = () => {
+    node.querySelector('#f-cal').value = Math.round(
+      num(node.querySelector('#f-prot').value) * 4 +
+      num(node.querySelector('#f-fat').value) * 9 +
+      num(node.querySelector('#f-carb').value) * 4
+    );
+  };
+  ['#f-prot', '#f-fat', '#f-carb'].forEach((s) => node.querySelector(s).addEventListener('input', recalcF));
+
   node.querySelector('#f-save').addEventListener('click', async () => {
     const name = node.querySelector('#f-name').value.trim();
     if (!name) return toast('Введите название', 'error');
@@ -1654,12 +1758,14 @@ function openDetailModal(dish) {
       <div class="p-5 sm:p-6 space-y-4">
         ${macrosBlock(dish)}
         ${recipeBlock(dish.recipe_text_or_link)}
+        ${dish.is_mine ? `
         <button data-edit class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition">
           ${ICON.edit} Редактировать
         </button>
         <button data-delete class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-[#5b2630] text-red-300 text-sm hover:bg-[#2a1518] transition">
           ${ICON.trash} Удалить блюдо
-        </button>
+        </button>` : `
+        <p class="text-xs text-muted text-center pt-1">Добавил: ${esc(dish.author || 'другой пользователь')} · редактировать может только автор</p>`}
       </div>
     </div>`;
 
@@ -1674,7 +1780,8 @@ function openDetailModal(dish) {
     });
   }
 
-  node.querySelector('[data-delete]').addEventListener('click', async () => {
+  const delBtn = node.querySelector('[data-delete]');
+  if (delBtn) delBtn.addEventListener('click', async () => {
     if (!confirm(`Удалить «${dish.title}»?`)) return;
     try {
       await api(`/api/dishes/${dish.id}`, { method: 'DELETE' });
@@ -1687,7 +1794,8 @@ function openDetailModal(dish) {
     }
   });
 
-  node.querySelector('[data-edit]').addEventListener('click', () => {
+  const editBtn = node.querySelector('[data-edit]');
+  if (editBtn) editBtn.addEventListener('click', () => {
     closeModal();
     openAddModal(dish);
   });
@@ -1895,11 +2003,7 @@ async function openRandomModal() {
       </div>
     </div>`;
 
-  const node = h(`<div class="fadein relative w-full sm:max-w-md bg-graphite sm:rounded-2xl border border-line shadow-soft overflow-hidden">
-      <button data-close class="absolute top-3 right-3 z-10 w-9 h-9 grid place-items-center rounded-full bg-ink/70 border border-line text-muted hover:text-white">${ICON.close}</button>
-      ${inner}
-    </div>`);
-
+  const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
   node.querySelector('[data-again]').addEventListener('click', () => { closeModal(); openRandomModal(); });
   node.querySelector('[data-open]').addEventListener('click', () => { closeModal(); openDetailModal(dish); });
@@ -1916,10 +2020,7 @@ function openProfileModal() {
       <p class="text-sm text-muted mt-1">${state.dishes.length} блюд в категории «${esc(state.category)}»</p>
       <button data-logout class="mt-6 w-full py-3 rounded-xl border border-line text-sm hover:bg-cardhi transition">Выйти</button>
     </div>`;
-  const node = h(`<div class="fadein relative w-full sm:max-w-md bg-graphite sm:rounded-2xl border border-line shadow-soft min-h-screen sm:min-h-0">
-      <button data-close class="absolute top-4 right-4 z-10 w-9 h-9 grid place-items-center rounded-full bg-ink/70 border border-line text-muted hover:text-white">${ICON.close}</button>
-      ${inner}
-    </div>`);
+  const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
   node.querySelector('[data-logout]').addEventListener('click', async () => {
     try { await api('/api/auth/logout', { method: 'POST' }); } catch (_) {}
@@ -1948,8 +2049,11 @@ async function generateForDish(dish) {
 
 /* ============================= Загрузка данных =========================== */
 async function loadDishes() {
-  const q = state.category !== 'Все' ? `?category=${encodeURIComponent(state.category)}` : '';
-  state.dishes = await api(`/api/dishes${q}`);
+  const params = new URLSearchParams();
+  if (state.category && state.category !== 'Все') params.set('category', state.category);
+  if (state.menuQuery && state.menuQuery.trim()) params.set('q', state.menuQuery.trim());
+  const qs = params.toString();
+  state.dishes = await api(`/api/dishes${qs ? '?' + qs : ''}`);
 }
 
 /* ================================= Старт ================================ */

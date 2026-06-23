@@ -34,16 +34,33 @@ def _get_owned_dish(dish_id: int, user: models.User, db: Session) -> models.Dish
     return dish
 
 
+def _decorate(dish: models.Dish, user: models.User) -> models.Dish:
+    """Помечает блюдо признаком владельца и именем автора (меню общее)."""
+    dish.is_mine = (dish.user_id == user.id)
+    dish.author = dish.owner.username if dish.owner else None
+    return dish
+
+
 @router.get("", response_model=list[schemas.DishOut])
 def list_dishes(
     category: Optional[str] = None,
+    q: Optional[str] = None,
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    query = db.query(models.Dish).filter(models.Dish.user_id == user.id)
+    # Меню общее для всех пользователей.
+    query = db.query(models.Dish)
     if category and category != "Все":
         query = query.filter(models.Dish.category == category)
-    return query.order_by(models.Dish.id.desc()).all()
+    dishes = query.order_by(models.Dish.id.desc()).all()
+
+    # Поиск по названию фильтруем в Python — корректная регистронезависимость
+    # для кириллицы (SQLite LIKE с не-ASCII не справляется).
+    if q and q.strip():
+        ql = q.strip().lower()
+        dishes = [d for d in dishes if ql in (d.title or "").lower()]
+
+    return [_decorate(d, user) for d in dishes]
 
 
 @router.get("/random", response_model=schemas.DishOut)
@@ -52,7 +69,7 @@ def random_dish(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    query = db.query(models.Dish).filter(models.Dish.user_id == user.id)
+    query = db.query(models.Dish)
     if category and category != "Все":
         query = query.filter(models.Dish.category == category)
 
@@ -61,7 +78,7 @@ def random_dish(
         raise HTTPException(
             status_code=404, detail="В этой категории пока нет блюд"
         )
-    return dish
+    return _decorate(dish, user)
 
 
 @router.post("", response_model=schemas.DishOut)
@@ -103,7 +120,7 @@ async def create_dish(
     db.add(dish)
     db.commit()
     db.refresh(dish)
-    return dish
+    return _decorate(dish, user)
 
 
 @router.put("/{dish_id}", response_model=schemas.DishOut)
@@ -150,7 +167,7 @@ async def update_dish(
 
     db.commit()
     db.refresh(dish)
-    return dish
+    return _decorate(dish, user)
 
 
 @router.delete("/{dish_id}", response_model=schemas.MessageOut)
@@ -185,7 +202,7 @@ async def generate_dish_image(
     db.refresh(dish)
 
     storage.remove_image(old_path)  # подчищаем прежнюю картинку
-    return dish
+    return _decorate(dish, user)
 
 
 @router.post("/generate-preview", response_model=schemas.GeneratedImageOut)

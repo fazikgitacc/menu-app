@@ -28,6 +28,8 @@ class DishOut(BaseModel):
     carbohydrates: float
     recipe_text_or_link: Optional[str] = None
     image_path: Optional[str] = None
+    is_mine: bool = False
+    author: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
