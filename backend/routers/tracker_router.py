@@ -127,9 +127,10 @@ def add_entry_from_dish(
     db: Session = Depends(get_db),
 ):
     _validate_meal(payload.meal_type)
+    # Меню общее — добавить в свой дневник можно любое блюдо, не только своё.
     dish = (
         db.query(models.Dish)
-        .filter(models.Dish.id == payload.dish_id, models.Dish.user_id == user.id)
+        .filter(models.Dish.id == payload.dish_id)
         .first()
     )
     if dish is None:
