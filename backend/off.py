@@ -3,7 +3,11 @@
 OFF — бесплатная краудсорсная база (ODbL). Данные часто неполные/неточные,
 поэтому КБЖУ всегда даём пользователю на правку перед сохранением.
 """
+import logging
+
 import httpx
+
+log = logging.getLogger("off")
 
 OFF_BASE = "https://world.openfoodfacts.org"
 # Современный сервис поиска OFF (Search-a-licious) — быстрый и не троттлится как cgi.
@@ -11,6 +15,8 @@ SAL_BASE = "https://search.openfoodfacts.org"
 # OFF просит указывать осмысленный User-Agent с названием приложения.
 HEADERS = {"User-Agent": "DomashneeMenu/1.0 (personal home-menu calorie tracker)"}
 TIMEOUT = 12.0
+SAL_TIMEOUT = 8.0     # быстрый индексный поиск
+CGI_TIMEOUT = 25.0    # cgi медленный (полный скан), даём больше времени
 FIELDS = "code,product_name,product_name_ru,brands,nutriments,serving_quantity,image_small_url"
 
 
@@ -63,7 +69,7 @@ def _has_data(p: dict) -> bool:
 async def _search_sal(query: str, limit: int) -> list[dict]:
     """Поиск через Search-a-licious (search.openfoodfacts.org)."""
     params = {"q": query, "page_size": limit, "lang": "ru"}
-    async with httpx.AsyncClient(timeout=TIMEOUT, headers=HEADERS) as client:
+    async with httpx.AsyncClient(timeout=SAL_TIMEOUT, headers=HEADERS) as client:
         resp = await client.get(f"{SAL_BASE}/search", params=params)
         resp.raise_for_status()
         data = resp.json()
@@ -76,7 +82,7 @@ async def _search_sal(query: str, limit: int) -> list[dict]:
 
 
 async def _search_cgi(query: str, limit: int) -> list[dict]:
-    """Старый поиск через cgi/search.pl — фолбэк."""
+    """Старый поиск через cgi/search.pl — фолбэк (медленный, но на доступном хосте)."""
     params = {
         "search_terms": query,
         "search_simple": 1,
@@ -85,7 +91,7 @@ async def _search_cgi(query: str, limit: int) -> list[dict]:
         "page_size": limit,
         "fields": FIELDS,
     }
-    async with httpx.AsyncClient(timeout=TIMEOUT, headers=HEADERS) as client:
+    async with httpx.AsyncClient(timeout=CGI_TIMEOUT, headers=HEADERS) as client:
         resp = await client.get(f"{OFF_BASE}/cgi/search.pl", params=params)
         resp.raise_for_status()
         data = resp.json()
@@ -98,17 +104,20 @@ async def _search_cgi(query: str, limit: int) -> list[dict]:
 
 
 async def search(query: str, limit: int = 20) -> list[dict]:
-    # 1) Современный сервис (надёжнее cgi, который OFF жёстко троттлит).
+    # 1) Современный сервис (быстрый). Может быть недоступен по egress.
     try:
         results = await _search_sal(query, limit)
         if results:
             return results
-    except Exception:
-        pass
-    # 2) Фолбэк на старый cgi-поиск.
+        log.warning("OFF SaL вернул 0 результатов по запросу %r", query)
+    except Exception as exc:
+        log.warning("OFF SaL недоступен (%s): %s", type(exc).__name__, exc)
+
+    # 2) Фолбэк на cgi (медленный) — на том же хосте, что и баркод.
     try:
         return await _search_cgi(query, limit)
-    except Exception:
+    except Exception as exc:
+        log.warning("OFF cgi-поиск не удался (%s): %s", type(exc).__name__, exc)
         return []
 
 
