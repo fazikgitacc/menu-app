@@ -41,22 +41,40 @@ def _macros_per_100g(nutriments: dict) -> dict:
     }
 
 
+def _as_text(value) -> str:
+    """Приводит поле к строке: SaL может вернуть list (бренды/имена) или dict (языки)."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_as_text(v) for v in value if v).strip(", ").strip()
+    if isinstance(value, dict):
+        for k in ("ru", "en", "main"):
+            if value.get(k):
+                return _as_text(value[k])
+        for v in value.values():
+            if v:
+                return _as_text(v)
+        return ""
+    return str(value).strip()
+
+
 def _normalize(product: dict) -> dict:
     nutriments = product.get("nutriments") or {}
     macros = _macros_per_100g(nutriments)
-    name = (product.get("product_name_ru") or product.get("product_name") or "").strip()
-    serving = product.get("serving_quantity")
-    serving = _to_float(serving) or None
+    name = _as_text(product.get("product_name_ru")) or _as_text(product.get("product_name"))
+    serving = _to_float(product.get("serving_quantity")) or None
     return {
-        "barcode": (product.get("code") or "").strip() or None,
+        "barcode": _as_text(product.get("code")) or None,
         "name": name,
-        "brand": (product.get("brands") or "").strip() or None,
+        "brand": _as_text(product.get("brands")) or None,
         "calories": macros["calories"],
         "proteins": macros["proteins"],
         "fats": macros["fats"],
         "carbohydrates": macros["carbohydrates"],
         "serving_size_g": serving,
-        "image_url": product.get("image_small_url") or product.get("image_url") or None,
+        "image_url": _as_text(product.get("image_small_url")) or _as_text(product.get("image_url")) or None,
     }
 
 
