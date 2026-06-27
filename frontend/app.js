@@ -1882,6 +1882,14 @@ function openAddModal(dish = null) {
   const actions = node.querySelector('#img-actions');
   const resetBtn = node.querySelector('#img-reset');
 
+  // Ввод Б/Ж/У автоматически считает калории порции.
+  const recalcDishCal = () => {
+    form.calories.value = Math.round(
+      num(form.proteins.value) * 4 + num(form.fats.value) * 9 + num(form.carbohydrates.value) * 4
+    );
+  };
+  ['proteins', 'fats', 'carbohydrates'].forEach((n) => form[n].addEventListener('input', recalcDishCal));
+
   function showPreview(url) {
     preview.src = url;
     preview.classList.remove('hidden');
