@@ -113,7 +113,7 @@ async def product_by_barcode(
     try:
         product = await off.by_barcode(code)
     except Exception:
-        raise HTTPException(status_code=502, detail="Open Food Facts недоступен")
+        raise HTTPException(status_code=404, detail="Продукт не найден")
     if not product:
         raise HTTPException(status_code=404, detail="Продукт не найден")
 

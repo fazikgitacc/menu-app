@@ -1675,36 +1675,103 @@ function quickAddDishToDiary(dish) {
 }
 
 /* --------------------- Блок КБЖУ (фитнес-стиль) ------------------------- */
+function dishViews(dish) {
+  const cal = num(dish.calories), p = num(dish.proteins), f = num(dish.fats), c = num(dish.carbohydrates);
+  const total = { key: 'total', label: 'Всё блюдо', cal, p, f, c };
+  const s = num(dish.servings), w = num(dish.total_weight_g);
+  let per = null;
+  if (s > 0) per = { key: 'per', label: 'На порцию', cal: cal / s, p: p / s, f: f / s, c: c / s };
+  else if (w > 0) per = { key: 'per', label: 'На 100 г', cal: cal / w * 100, p: p / w * 100, f: f / w * 100, c: c / w * 100 };
+  return { total, per };
+}
+
 function macrosBlock(dish) {
+  const { total, per } = dishViews(dish);
+  const init = per || total;
   const p = num(dish.proteins), f = num(dish.fats), c = num(dish.carbohydrates);
-  const total = p + f + c;
-  const pct = (v) => (total > 0 ? Math.max(2, Math.round((v / total) * 100)) : 0);
-  const bar = (label, val, pctVal, color) => `
+  const totalMac = p + f + c;
+  const pct = (v) => (totalMac > 0 ? Math.max(2, Math.round((v / totalMac) * 100)) : 0);
+  const bar = (label, id, val, pctVal, color) => `
     <div>
       <div class="flex items-baseline justify-between mb-1.5">
         <span class="text-sm text-muted">${label}</span>
-        <span class="text-sm"><span class="font-semibold">${fmt(val)}</span><span class="text-muted"> г</span></span>
+        <span class="text-sm"><span class="font-semibold" id="${id}">${fmt(val)}</span><span class="text-muted"> г</span></span>
       </div>
       <div class="h-2 rounded-full bg-ink overflow-hidden">
         <div class="h-full rounded-full" style="width:${pctVal}%;background:${color}"></div>
       </div>
     </div>`;
-
+  const toggle = per ? `
+    <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink border border-line mb-4 text-xs font-medium">
+      <button type="button" data-mbmode="per" class="py-1.5 rounded-lg transition">${esc(per.label)}</button>
+      <button type="button" data-mbmode="total" class="py-1.5 rounded-lg transition">Всё блюдо</button>
+    </div>` : '';
   return `
     <div class="rounded-2xl bg-card border border-line p-5">
+      ${toggle}
       <div class="flex items-end justify-between mb-5">
         <div>
           <p class="text-xs uppercase tracking-wider text-muted">Калорийность</p>
-          <p class="mt-1"><span class="text-4xl font-bold text-accent">${fmt(dish.calories)}</span><span class="text-muted text-sm ml-1.5">ккал</span></p>
+          <p class="mt-1"><span class="text-4xl font-bold text-accent" id="mb-cal">${fmt(init.cal)}</span><span class="text-muted text-sm ml-1.5">ккал</span></p>
         </div>
-        <span class="text-xs text-muted">на порцию</span>
+        ${per ? '' : '<span class="text-xs text-muted">на всё блюдо</span>'}
       </div>
       <div class="space-y-4">
-        ${bar('Белки', p, pct(p), '#5ec8a8')}
-        ${bar('Жиры', f, pct(f), '#e6b260')}
-        ${bar('Углеводы', c, pct(c), '#6aa8e6')}
+        ${bar('Белки', 'mb-p', init.p, pct(p), '#5ec8a8')}
+        ${bar('Жиры', 'mb-f', init.f, pct(f), '#e6b260')}
+        ${bar('Углеводы', 'mb-c', init.c, pct(c), '#6aa8e6')}
       </div>
     </div>`;
+}
+
+function wireMacros(node, dish) {
+  const views = dishViews(dish);
+  if (!views.per) return;
+  let mode = 'per';
+  const apply = () => {
+    const v = mode === 'total' ? views.total : views.per;
+    node.querySelector('#mb-cal').textContent = fmt(v.cal);
+    node.querySelector('#mb-p').textContent = fmt(v.p);
+    node.querySelector('#mb-f').textContent = fmt(v.f);
+    node.querySelector('#mb-c').textContent = fmt(v.c);
+    node.querySelectorAll('[data-mbmode]').forEach((b) => {
+      const on = b.getAttribute('data-mbmode') === mode;
+      b.classList.toggle('bg-accent', on); b.classList.toggle('text-ink', on); b.classList.toggle('text-muted', !on);
+    });
+  };
+  node.querySelectorAll('[data-mbmode]').forEach((b) =>
+    b.addEventListener('click', () => { mode = b.getAttribute('data-mbmode'); apply(); }));
+  apply();
+}
+
+function ingredientsBlock(dish) {
+  const ings = Array.isArray(dish.ingredients) ? dish.ingredients : [];
+  if (!ings.length) return '';
+  const rows = ings.map((it) => `
+    <div class="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-line/60">
+      <span class="text-sm truncate">${esc(it.name)}</span>
+      <span class="text-sm text-muted shrink-0">${fmt(it.grams)} г</span>
+    </div>`).join('');
+  return `
+    <div class="rounded-2xl bg-card border border-line overflow-hidden">
+      <button type="button" data-ing-toggle class="w-full flex items-center justify-between p-4 text-left">
+        <span class="text-sm font-medium">Ингредиенты <span class="text-muted">· ${ings.length}</span></span>
+        <span data-ing-chev class="w-6 h-6 grid place-items-center rounded-full border border-line text-muted transition-transform duration-200">${ICON.plus}</span>
+      </button>
+      <div data-ing-body class="hidden">${rows}</div>
+    </div>`;
+}
+
+function wireIngredientsView(node) {
+  const btn = node.querySelector('[data-ing-toggle]');
+  if (!btn) return;
+  const body = node.querySelector('[data-ing-body]');
+  const chev = node.querySelector('[data-ing-chev]');
+  btn.addEventListener('click', () => {
+    const open = body.classList.toggle('hidden') === false;
+    chev.classList.toggle('rotate-45', open);
+    chev.classList.toggle('text-accent', open);
+  });
 }
 
 function recipeBlock(text) {
@@ -1757,6 +1824,7 @@ function openDetailModal(dish) {
       <!-- Информация -->
       <div class="p-5 sm:p-6 space-y-4">
         ${macrosBlock(dish)}
+        ${ingredientsBlock(dish)}
         ${recipeBlock(dish.recipe_text_or_link)}
         ${dish.is_mine ? `
         <button data-edit class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition">
@@ -1771,6 +1839,8 @@ function openDetailModal(dish) {
 
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
+  wireMacros(node, dish);
+  wireIngredientsView(node);
 
   const genBtn = node.querySelector('[data-gen]');
   if (genBtn) {
@@ -1851,8 +1921,50 @@ function openAddModal(dish = null) {
           <textarea name="description" rows="2" placeholder="Короткое описание" class="${fieldCls} resize-none">${v('description')}</textarea>
         </div>
 
+        <div class="rounded-2xl bg-card border border-line overflow-hidden">
+          <button type="button" id="ing-toggle" class="w-full flex items-center justify-between p-4 text-left">
+            <span class="text-sm font-medium">Ингредиенты <span id="ing-count" class="text-muted"></span></span>
+            <span id="ing-chev" class="w-6 h-6 grid place-items-center rounded-full border border-line text-muted transition-transform duration-200">${ICON.plus}</span>
+          </button>
+          <div id="ing-body" class="hidden px-4 pb-4 space-y-3">
+            <p class="text-[11px] text-muted/80">Добавьте ингредиенты — КБЖУ блюда посчитается автоматически.</p>
+            <div id="ing-list" class="space-y-2"></div>
+            <button type="button" id="ing-add" class="w-full py-2.5 rounded-xl border border-line bg-ink text-sm hover:border-accent/50 transition flex items-center justify-center gap-2"><span class="w-4 h-4">${ICON.plus}</span> Добавить ингредиент</button>
+
+            <div id="ing-panel" class="hidden rounded-xl border border-line bg-ink p-3 space-y-3">
+              <div class="grid grid-cols-2 gap-1 p-1 rounded-lg bg-card border border-line text-xs font-medium">
+                <button type="button" data-imode="off" class="py-1.5 rounded-md transition">Через OFF</button>
+                <button type="button" data-imode="manual" class="py-1.5 rounded-md transition">Вручную</button>
+              </div>
+              <div id="ing-off">
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted">${ICON.search}</span>
+                  <input id="ing-q" placeholder="Название продукта" autocomplete="off" class="w-full bg-graphite border border-line rounded-xl pl-9 pr-3 py-2 text-sm outline-none focus:border-accent/60 transition" />
+                </div>
+                <div id="ing-res" class="mt-2 space-y-1 max-h-56 overflow-y-auto no-scrollbar"></div>
+              </div>
+              <div id="ing-manual" class="hidden space-y-2">
+                <input id="im-name" placeholder="Название" class="${fieldCls}" />
+                <div class="grid grid-cols-4 gap-2">
+                  <div><label class="text-[10px] text-muted mb-1 block">ккал/100г</label><input id="im-cal" inputmode="decimal" placeholder="0" class="${fieldCls}" /></div>
+                  <div><label class="text-[10px] text-prot mb-1 block">Б/100г</label><input id="im-prot" inputmode="decimal" placeholder="0" class="${fieldCls}" /></div>
+                  <div><label class="text-[10px] text-fat mb-1 block">Ж/100г</label><input id="im-fat" inputmode="decimal" placeholder="0" class="${fieldCls}" /></div>
+                  <div><label class="text-[10px] text-carb mb-1 block">У/100г</label><input id="im-carb" inputmode="decimal" placeholder="0" class="${fieldCls}" /></div>
+                </div>
+                <div><label class="text-[10px] text-muted mb-1 block">Граммов в блюде</label><input id="im-grams" inputmode="decimal" placeholder="100" class="${fieldCls}" /></div>
+                <button type="button" id="im-add" class="w-full py-2.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Добавить ингредиент</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="text-xs text-muted mb-1 block">Вес блюда, г</label><input name="total_weight_g" inputmode="decimal" placeholder="напр. 800" value="${v('total_weight_g')}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-muted mb-1 block">Порций</label><input name="servings" inputmode="decimal" placeholder="напр. 4" value="${v('servings')}" class="${fieldCls}" /></div>
+        </div>
+
         <div class="rounded-2xl bg-card border border-line p-4">
-          <p class="text-xs uppercase tracking-wider text-muted mb-3">КБЖУ на порцию</p>
+          <p id="kbju-title" class="text-xs uppercase tracking-wider text-muted mb-3">КБЖУ на всё блюдо</p>
           <div class="mb-3">
             <label class="text-xs text-muted mb-1 block">Калории, ккал</label>
             <input name="calories" inputmode="decimal" placeholder="0" value="${v('calories')}" class="${fieldCls}" />
@@ -1862,6 +1974,7 @@ function openAddModal(dish = null) {
             <div><label class="text-xs text-fat mb-1 block">Жиры</label><input name="fats" inputmode="decimal" placeholder="0" value="${v('fats')}" class="${fieldCls}" /></div>
             <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input name="carbohydrates" inputmode="decimal" placeholder="0" value="${v('carbohydrates')}" class="${fieldCls}" /></div>
           </div>
+          <p id="kbju-auto" class="hidden text-[11px] text-accent/80 mt-2">Считается из ингредиентов автоматически</p>
         </div>
 
         <div>
@@ -1882,13 +1995,157 @@ function openAddModal(dish = null) {
   const actions = node.querySelector('#img-actions');
   const resetBtn = node.querySelector('#img-reset');
 
-  // Ввод Б/Ж/У автоматически считает калории порции.
+  // ------------------------- Ингредиенты блюда -------------------------
+  let ings = (isEdit && Array.isArray(dish.ingredients))
+    ? dish.ingredients.map((it) => ({
+        name: it.name || '', grams: num(it.grams),
+        calories: num(it.calories), proteins: num(it.proteins),
+        fats: num(it.fats), carbohydrates: num(it.carbohydrates),
+      }))
+    : [];
+
+  const macroInputs = ['calories', 'proteins', 'fats', 'carbohydrates'];
+
+  // Ввод Б/Ж/У вручную считает калории — только когда нет ингредиентов.
   const recalcDishCal = () => {
+    if (ings.length) return;
     form.calories.value = Math.round(
       num(form.proteins.value) * 4 + num(form.fats.value) * 9 + num(form.carbohydrates.value) * 4
     );
   };
   ['proteins', 'fats', 'carbohydrates'].forEach((n) => form[n].addEventListener('input', recalcDishCal));
+
+  const ingList = node.querySelector('#ing-list');
+  const ingCount = node.querySelector('#ing-count');
+  const kbjuAuto = node.querySelector('#kbju-auto');
+  const kbjuTitle = node.querySelector('#kbju-title');
+  const weightInput = form.total_weight_g;
+
+  function recomputeTotals() {
+    const has = ings.length > 0;
+    // блокируем ручной ввод КБЖУ, когда есть ингредиенты
+    macroInputs.forEach((n) => {
+      form[n].disabled = has;
+      form[n].classList.toggle('opacity-60', has);
+    });
+    kbjuAuto.classList.toggle('hidden', !has);
+    kbjuTitle.textContent = has ? 'КБЖУ на всё блюдо (из ингредиентов)' : 'КБЖУ на всё блюдо';
+    ingCount.textContent = has ? `· ${ings.length}` : '';
+    if (!has) return;
+    const t = ings.reduce((a, it) => {
+      const k = (it.grams || 0) / 100;
+      a.calories += it.calories * k; a.proteins += it.proteins * k;
+      a.fats += it.fats * k; a.carbohydrates += it.carbohydrates * k;
+      return a;
+    }, { calories: 0, proteins: 0, fats: 0, carbohydrates: 0 });
+    form.calories.value = Math.round(t.calories);
+    form.proteins.value = Math.round(t.proteins * 10) / 10;
+    form.fats.value = Math.round(t.fats * 10) / 10;
+    form.carbohydrates.value = Math.round(t.carbohydrates * 10) / 10;
+    // подсказываем вес = сумма граммов, если поле пустое
+    if (!num(weightInput.value)) weightInput.value = Math.round(ings.reduce((s, it) => s + (it.grams || 0), 0));
+  }
+
+  function renderIngList() {
+    ingList.innerHTML = ings.map((it, i) => `
+      <div class="flex items-center gap-2 bg-graphite border border-line rounded-xl px-3 py-2">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm truncate">${esc(it.name)}</p>
+          <p class="text-[11px] text-muted">${fmt(it.calories)} ккал·100г</p>
+        </div>
+        <input type="text" inputmode="decimal" value="${esc(String(it.grams))}" data-grams="${i}" class="w-16 bg-ink border border-line rounded-lg px-2 py-1 text-sm text-center outline-none focus:border-accent/60" />
+        <span class="text-xs text-muted">г</span>
+        <button type="button" data-del="${i}" class="w-7 h-7 grid place-items-center rounded-lg text-muted hover:text-red-300">${ICON.trash}</button>
+      </div>`).join('');
+    ingList.querySelectorAll('[data-grams]').forEach((inp) => {
+      inp.addEventListener('input', () => { ings[+inp.getAttribute('data-grams')].grams = num(inp.value); recomputeTotals(); });
+    });
+    ingList.querySelectorAll('[data-del]').forEach((b) => {
+      b.addEventListener('click', () => { ings.splice(+b.getAttribute('data-del'), 1); renderIngList(); recomputeTotals(); });
+    });
+  }
+
+  function addIngredient(ing) {
+    ings.push(ing);
+    renderIngList();
+    recomputeTotals();
+  }
+
+  // Аккордеон
+  const ingBody = node.querySelector('#ing-body');
+  const ingChev = node.querySelector('#ing-chev');
+  node.querySelector('#ing-toggle').addEventListener('click', () => {
+    const open = ingBody.classList.toggle('hidden') === false;
+    ingChev.classList.toggle('rotate-45', open);
+    ingChev.classList.toggle('text-accent', open);
+  });
+
+  // Панель добавления + режимы OFF/вручную
+  const ingPanel = node.querySelector('#ing-panel');
+  const ingOff = node.querySelector('#ing-off');
+  const ingManual = node.querySelector('#ing-manual');
+  const paintImode = (mode) => {
+    node.querySelectorAll('[data-imode]').forEach((b) => {
+      const on = b.getAttribute('data-imode') === mode;
+      b.classList.toggle('bg-accent', on); b.classList.toggle('text-ink', on); b.classList.toggle('text-muted', !on);
+    });
+    ingOff.classList.toggle('hidden', mode !== 'off');
+    ingManual.classList.toggle('hidden', mode !== 'manual');
+  };
+  node.querySelector('#ing-add').addEventListener('click', () => {
+    ingPanel.classList.toggle('hidden');
+    if (!ingPanel.classList.contains('hidden')) { paintImode('off'); node.querySelector('#ing-q').focus(); }
+  });
+  node.querySelectorAll('[data-imode]').forEach((b) => b.addEventListener('click', () => paintImode(b.getAttribute('data-imode'))));
+
+  // OFF-поиск ингредиента
+  const ingQ = node.querySelector('#ing-q');
+  const ingRes = node.querySelector('#ing-res');
+  let ingT = null;
+  const renderIngResults = (items) => {
+    if (!items.length) { ingRes.innerHTML = `<p class="text-xs text-muted/70 px-1 py-2">Ничего не найдено</p>`; return; }
+    ingRes.innerHTML = items.map((p, i) => `
+      <button type="button" data-pick="${i}" class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-graphite border border-line hover:border-accent/50 transition text-left">
+        <span class="min-w-0"><span class="text-sm truncate block">${esc(p.name)}${p.source === 'catalog' ? ' <span class=\"text-[10px] text-accent\">Мои</span>' : ''}</span><span class="text-[11px] text-muted">${fmt(p.calories)} ккал·100г</span></span>
+        <span class="w-6 h-6 grid place-items-center rounded-full bg-accent/15 text-accent shrink-0">${ICON.plus}</span>
+      </button>`).join('');
+    ingRes.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {
+      const p = items[+b.getAttribute('data-pick')];
+      addIngredient({ name: p.name, grams: 100, calories: num(p.calories), proteins: num(p.proteins), fats: num(p.fats), carbohydrates: num(p.carbohydrates) });
+      ingQ.value = ''; ingRes.innerHTML = '';
+      toast('Ингредиент добавлен — укажите граммы', 'success');
+    }));
+  };
+  ingQ.addEventListener('input', () => {
+    clearTimeout(ingT);
+    const q = ingQ.value.trim();
+    if (q.length < 2) { ingRes.innerHTML = ''; return; }
+    ingT = setTimeout(async () => {
+      try { renderIngResults(await api(`/api/products/search?q=${encodeURIComponent(q)}`)); }
+      catch (_) { ingRes.innerHTML = `<p class="text-xs text-muted/70 px-1 py-2">Ошибка поиска</p>`; }
+    }, 350);
+  });
+
+  // Ручной ингредиент
+  node.querySelector('#im-add').addEventListener('click', () => {
+    const name = node.querySelector('#im-name').value.trim();
+    if (!name) return toast('Введите название ингредиента', 'error');
+    addIngredient({
+      name,
+      grams: num(node.querySelector('#im-grams').value) || 100,
+      calories: num(node.querySelector('#im-cal').value),
+      proteins: num(node.querySelector('#im-prot').value),
+      fats: num(node.querySelector('#im-fat').value),
+      carbohydrates: num(node.querySelector('#im-carb').value),
+    });
+    ['#im-name', '#im-cal', '#im-prot', '#im-fat', '#im-carb', '#im-grams'].forEach((s) => { node.querySelector(s).value = ''; });
+    toast('Ингредиент добавлен', 'success');
+  });
+
+  // первичная отрисовка + разворачиваем аккордеон, если ингредиенты уже есть
+  renderIngList();
+  recomputeTotals();
+  if (ings.length) { ingBody.classList.remove('hidden'); ingChev.classList.add('rotate-45', 'text-accent'); }
 
   function showPreview(url) {
     preview.src = url;
@@ -1952,6 +2209,9 @@ function openAddModal(dish = null) {
     fd.append('proteins', num(form.proteins.value));
     fd.append('fats', num(form.fats.value));
     fd.append('carbohydrates', num(form.carbohydrates.value));
+    fd.append('ingredients', JSON.stringify(ings));
+    fd.append('total_weight_g', num(form.total_weight_g.value));
+    fd.append('servings', num(form.servings.value));
     fd.append('recipe_text_or_link', form.recipe_text_or_link.value.trim());
     if (img.file) fd.append('image', img.file);
     else if (img.generatedPath) fd.append('image_path', img.generatedPath);

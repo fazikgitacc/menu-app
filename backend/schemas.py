@@ -17,6 +17,16 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DishIngredient(BaseModel):
+    """Ингредиент блюда. КБЖУ указываются на 100 г ингредиента."""
+    name: str
+    grams: float = 0
+    calories: float = 0
+    proteins: float = 0
+    fats: float = 0
+    carbohydrates: float = 0
+
+
 class DishOut(BaseModel):
     id: int
     title: str
@@ -26,6 +36,9 @@ class DishOut(BaseModel):
     proteins: float
     fats: float
     carbohydrates: float
+    ingredients: list[DishIngredient] = []
+    total_weight_g: Optional[float] = None
+    servings: Optional[float] = None
     recipe_text_or_link: Optional[str] = None
     image_path: Optional[str] = None
     is_mine: bool = False

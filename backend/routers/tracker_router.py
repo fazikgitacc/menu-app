@@ -137,6 +137,8 @@ def add_entry_from_dish(
         raise HTTPException(status_code=404, detail="Блюдо не найдено")
 
     servings = payload.servings if payload.servings and payload.servings > 0 else 1
+    # КБЖУ блюда хранится на ВСЁ блюдо; порция = всего / число порций.
+    denom = dish.servings if dish.servings and dish.servings > 0 else 1
     entry = models.MealEntry(
         user_id=user.id,
         date=payload.date,
@@ -145,10 +147,10 @@ def add_entry_from_dish(
         name=dish.title,
         amount=servings,
         unit="serving",
-        calories=round((dish.calories or 0) * servings, 1),
-        proteins=round((dish.proteins or 0) * servings, 1),
-        fats=round((dish.fats or 0) * servings, 1),
-        carbohydrates=round((dish.carbohydrates or 0) * servings, 1),
+        calories=round((dish.calories or 0) / denom * servings, 1),
+        proteins=round((dish.proteins or 0) / denom * servings, 1),
+        fats=round((dish.fats or 0) / denom * servings, 1),
+        carbohydrates=round((dish.carbohydrates or 0) / denom * servings, 1),
         dish_id=dish.id,
     )
     db.add(entry)

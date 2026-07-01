@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Text, ForeignKey, Date, DateTime,
+    Column, Integer, String, Float, Text, ForeignKey, Date, DateTime, JSON,
 )
 from sqlalchemy.orm import relationship
 
@@ -43,10 +43,16 @@ class Dish(Base):
     description = Column(Text, nullable=True)
     category = Column(String(32), nullable=False, default="Обед")
 
+    # КБЖУ — на ВСЁ блюдо (total). Порция/100 г вычисляются из servings/total_weight_g.
     calories = Column(Float, nullable=False, default=0)
     proteins = Column(Float, nullable=False, default=0)
     fats = Column(Float, nullable=False, default=0)
     carbohydrates = Column(Float, nullable=False, default=0)
+
+    # Список ингредиентов: [{name, grams, calories, proteins, fats, carbohydrates}] — КБЖУ на 100 г.
+    ingredients = Column(JSON, nullable=True, default=list)
+    total_weight_g = Column(Float, nullable=True)   # общий вес блюда, г
+    servings = Column(Float, nullable=True)         # число порций
 
     recipe_text_or_link = Column(Text, nullable=True)
     image_path = Column(String(255), nullable=True)

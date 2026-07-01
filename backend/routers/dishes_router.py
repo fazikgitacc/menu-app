@@ -12,6 +12,8 @@ from fastapi import (
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+import json
+
 import ai
 import config
 import models
@@ -21,6 +23,51 @@ from auth import get_current_user
 from database import get_db
 
 router = APIRouter(prefix="/api/dishes", tags=["dishes"])
+
+
+def _parse_ingredients(raw: Optional[str]) -> list[dict]:
+    """Разбирает JSON-строку ингредиентов из формы в нормализованный список."""
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for it in data:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        def n(key):
+            try:
+                return max(0.0, round(float(it.get(key) or 0), 2))
+            except (TypeError, ValueError):
+                return 0.0
+        out.append({
+            "name": name[:120],
+            "grams": n("grams"),
+            "calories": n("calories"),
+            "proteins": n("proteins"),
+            "fats": n("fats"),
+            "carbohydrates": n("carbohydrates"),
+        })
+    return out
+
+
+def _totals_from_ingredients(ingredients: list[dict]) -> dict:
+    """Суммарные КБЖУ всего блюда из ингредиентов (их КБЖУ заданы на 100 г)."""
+    tot = {"calories": 0.0, "proteins": 0.0, "fats": 0.0, "carbohydrates": 0.0}
+    for it in ingredients:
+        k = (it.get("grams") or 0) / 100.0
+        tot["calories"] += (it.get("calories") or 0) * k
+        tot["proteins"] += (it.get("proteins") or 0) * k
+        tot["fats"] += (it.get("fats") or 0) * k
+        tot["carbohydrates"] += (it.get("carbohydrates") or 0) * k
+    return {key: round(val, 1) for key, val in tot.items()}
 
 
 def _get_owned_dish(dish_id: int, user: models.User, db: Session) -> models.Dish:
@@ -38,6 +85,8 @@ def _decorate(dish: models.Dish, user: models.User) -> models.Dish:
     """Помечает блюдо признаком владельца и именем автора (меню общее)."""
     dish.is_mine = (dish.user_id == user.id)
     dish.author = dish.owner.username if dish.owner else None
+    if dish.ingredients is None:
+        dish.ingredients = []
     return dish
 
 
@@ -90,6 +139,9 @@ async def create_dish(
     proteins: float = Form(0),
     fats: float = Form(0),
     carbohydrates: float = Form(0),
+    ingredients: Optional[str] = Form(None),      # JSON-строка
+    total_weight_g: Optional[float] = Form(None),
+    servings: Optional[float] = Form(None),
     recipe_text_or_link: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
     image_path: Optional[str] = Form(None),  # путь от ранее сгенерированного превью
@@ -98,6 +150,14 @@ async def create_dish(
 ):
     if category not in config.CATEGORIES:
         category = "Обед"
+
+    ings = _parse_ingredients(ingredients)
+    if ings:
+        tot = _totals_from_ingredients(ings)
+        calories, proteins = tot["calories"], tot["proteins"]
+        fats, carbohydrates = tot["fats"], tot["carbohydrates"]
+        if not total_weight_g or total_weight_g <= 0:
+            total_weight_g = round(sum(i["grams"] for i in ings), 1) or None
 
     saved_path: Optional[str] = None
     if image is not None and image.filename:
@@ -114,6 +174,9 @@ async def create_dish(
         proteins=proteins or 0,
         fats=fats or 0,
         carbohydrates=carbohydrates or 0,
+        ingredients=ings,
+        total_weight_g=(total_weight_g if total_weight_g and total_weight_g > 0 else None),
+        servings=(servings if servings and servings > 0 else None),
         recipe_text_or_link=(recipe_text_or_link or None),
         image_path=saved_path,
     )
@@ -133,6 +196,9 @@ async def update_dish(
     proteins: float = Form(0),
     fats: float = Form(0),
     carbohydrates: float = Form(0),
+    ingredients: Optional[str] = Form(None),
+    total_weight_g: Optional[float] = Form(None),
+    servings: Optional[float] = Form(None),
     recipe_text_or_link: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
     image_path: Optional[str] = Form(None),
@@ -142,6 +208,14 @@ async def update_dish(
     dish = _get_owned_dish(dish_id, user, db)
     if category not in config.CATEGORIES:
         category = dish.category
+
+    ings = _parse_ingredients(ingredients)
+    if ings:
+        tot = _totals_from_ingredients(ings)
+        calories, proteins = tot["calories"], tot["proteins"]
+        fats, carbohydrates = tot["fats"], tot["carbohydrates"]
+        if not total_weight_g or total_weight_g <= 0:
+            total_weight_g = round(sum(i["grams"] for i in ings), 1) or None
 
     # Картинку меняем только если прислали новую (файл или сгенерированный путь),
     # иначе оставляем прежнюю.
@@ -163,6 +237,9 @@ async def update_dish(
     dish.proteins = proteins or 0
     dish.fats = fats or 0
     dish.carbohydrates = carbohydrates or 0
+    dish.ingredients = ings
+    dish.total_weight_g = total_weight_g if total_weight_g and total_weight_g > 0 else None
+    dish.servings = servings if servings and servings > 0 else None
     dish.recipe_text_or_link = recipe_text_or_link or None
 
     db.commit()
