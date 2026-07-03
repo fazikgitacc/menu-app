@@ -74,6 +74,11 @@
     @media (prefers-reduced-motion: reduce) { .fadein, .spin { animation: none; } }
     /* плавный скролл рецепта */
     .recipe { white-space: pre-wrap; word-break: break-word; }
+    /* Ползунок воды */
+    .water-range { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; border-radius: 9999px; background: #1a1d23; outline: none; cursor: pointer; }
+    .water-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #6aa8e6; border: 3px solid #0d0f12; box-shadow: 0 1px 5px rgba(0,0,0,.55); cursor: pointer; }
+    .water-range::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: #6aa8e6; border: 3px solid #0d0f12; box-shadow: 0 1px 5px rgba(0,0,0,.55); cursor: pointer; }
+    .water-range::-moz-range-track { height: 8px; border-radius: 9999px; background: transparent; }
   </style>
 </head>
 <body class="bg-ink text-gray-100 font-sans min-h-screen antialiased">

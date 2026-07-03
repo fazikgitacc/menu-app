@@ -439,17 +439,16 @@ function diaryView() {
 
   // Вода
   const waterGoal = goal?.target_water_ml || 2000;
+  const waterMax = Math.ceil(Math.max(3000, waterGoal, day.water_ml) / 50) * 50;
   const water = `
     <section class="rounded-2xl bg-card border border-line p-4">
-      <div class="flex items-center justify-between mb-2">
+      <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-2"><span class="text-carb w-5 h-5 inline-block">${ICON.drop}</span><h3 class="text-sm font-medium">Вода</h3></div>
-        <p class="text-sm text-muted">${fmt(day.water_ml)} / ${fmt(waterGoal)} мл</p>
+        <p class="text-sm text-muted"><span id="water-val" class="text-white font-medium">${fmt(day.water_ml)}</span> / ${fmt(waterGoal)} мл</p>
       </div>
-      ${progressBar(day.water_ml, waterGoal, 'bg-carb')}
-      <div class="flex gap-2 mt-3">
-        <button data-water="250" class="flex-1 py-2 rounded-xl border border-line bg-ink text-sm hover:border-carb/50 transition">+250</button>
-        <button data-water="500" class="flex-1 py-2 rounded-xl border border-line bg-ink text-sm hover:border-carb/50 transition">+500</button>
-        <button data-water="-250" class="px-4 py-2 rounded-xl border border-line bg-ink text-sm text-muted hover:text-white transition">−250</button>
+      <input id="water-range" type="range" min="0" max="${waterMax}" step="50" value="${day.water_ml}" class="water-range" />
+      <div class="flex justify-between text-[10px] text-muted/60 mt-1.5 px-0.5">
+        <span>0</span><span>шаг 50 мл</span><span>${fmt(waterMax)} мл</span>
       </div>
     </section>`;
 
@@ -524,9 +523,30 @@ function wireDiary(root) {
   const cal = root.querySelector('[data-cal]');
   if (cal) cal.addEventListener('click', openCalendar);
   root.querySelectorAll('[data-goal]').forEach((b) => b.addEventListener('click', openGoalModal));
-  root.querySelectorAll('[data-water]').forEach((b) => b.addEventListener('click', () => addWater(Number(b.getAttribute('data-water')))));
   root.querySelectorAll('[data-add-meal]').forEach((b) => b.addEventListener('click', () => openAddToMeal(b.getAttribute('data-add-meal'))));
   root.querySelectorAll('[data-entry]').forEach((b) => b.addEventListener('click', () => openEntryActions(Number(b.getAttribute('data-entry')))));
+
+  const wr = root.querySelector('#water-range');
+  if (wr) {
+    const wl = root.querySelector('#water-val');
+    const paintFill = () => {
+      const pct = wr.max > 0 ? (wr.value / wr.max) * 100 : 0;
+      wr.style.background = `linear-gradient(90deg, #6aa8e6 ${pct}%, #1a1d23 ${pct}%)`;
+    };
+    paintFill();
+    wr.addEventListener('input', () => { wl.textContent = fmt(Number(wr.value)); paintFill(); });
+    wr.addEventListener('change', () => setWater(Number(wr.value)));
+  }
+}
+
+async function setWater(target) {
+  const current = (state.day && state.day.water_ml) || 0;
+  const delta = Math.round(target) - Math.round(current);
+  if (delta === 0) return;
+  try {
+    await api('/api/tracker/water', { method: 'POST', json: { date: state.diaryDate, amount_ml: delta } });
+    await reloadDay();
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 async function addWater(ml) {
@@ -729,6 +749,25 @@ function openCustomEntry(mealType, existing = null) {
   };
   ['#f-prot', '#f-fat', '#f-carb'].forEach((s) => node.querySelector(s).addEventListener('input', recalcF));
 
+  // При редактировании смена количества (веса) пропорционально пересчитывает КБЖУ.
+  if (isEdit) {
+    const base = {
+      amount: num(existing.amount) || 1,
+      calories: num(existing.calories),
+      proteins: num(existing.proteins),
+      fats: num(existing.fats),
+      carbohydrates: num(existing.carbohydrates),
+    };
+    node.querySelector('#f-amount').addEventListener('input', () => {
+      if (base.amount <= 0) return;
+      const k = (num(node.querySelector('#f-amount').value) || 0) / base.amount;
+      node.querySelector('#f-cal').value = Math.round(base.calories * k);
+      node.querySelector('#f-prot').value = Math.round(base.proteins * k * 10) / 10;
+      node.querySelector('#f-fat').value = Math.round(base.fats * k * 10) / 10;
+      node.querySelector('#f-carb').value = Math.round(base.carbohydrates * k * 10) / 10;
+    });
+  }
+
   node.querySelector('#f-save').addEventListener('click', async () => {
     const name = node.querySelector('#f-name').value.trim();
     if (!name) return toast('Введите название', 'error');
@@ -860,7 +899,9 @@ function openGoalModal() {
         <div><label class="text-xs text-muted mb-1 block">Вода, мл</label><input id="g-water" inputmode="numeric" value="${gv('target_water_ml', '2000')}" class="${fieldCls}" /></div>
       </div>
 
-      <button id="g-save" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Сохранить цель</button>
+      <div class="sticky bottom-0 -mx-5 sm:-mx-6 px-5 sm:px-6 pt-3 pb-1 bg-graphite border-t border-line">
+        <button id="g-save" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Сохранить цель</button>
+      </div>
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
