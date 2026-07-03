@@ -870,7 +870,8 @@ function openGoalModal() {
   ).join('');
 
   const inner = `
-    <div class="p-5 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto no-scrollbar">
+    <div class="flex flex-col max-h-[90vh]">
+      <div class="p-5 sm:p-6 space-y-4 overflow-y-auto no-scrollbar">
       <h2 class="text-lg font-semibold">Цель</h2>
 
       <div class="flex gap-1 p-1 rounded-xl bg-ink border border-line">${modeBtns}</div>
@@ -899,7 +900,9 @@ function openGoalModal() {
         <div><label class="text-xs text-muted mb-1 block">Вода, мл</label><input id="g-water" inputmode="numeric" value="${gv('target_water_ml', '2000')}" class="${fieldCls}" /></div>
       </div>
 
-      <div class="sticky bottom-0 -mx-5 sm:-mx-6 px-5 sm:px-6 pt-3 pb-1 bg-graphite border-t border-line">
+      </div>
+
+      <div class="px-5 sm:px-6 pt-3 pb-4 bg-graphite border-t border-line">
         <button id="g-save" class="w-full py-3.5 rounded-xl bg-accent text-ink font-semibold text-sm hover:bg-[#eecb96] transition">Сохранить цель</button>
       </div>
     </div>`;
