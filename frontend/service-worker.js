@@ -1,5 +1,5 @@
 /* Service Worker — офлайн-оболочка PWA. */
-const SHELL_CACHE = 'menu-shell-v18';
+const SHELL_CACHE = 'menu-shell-v19';
 const IMG_CACHE = 'menu-img-v1';
 
 const SHELL = [

@@ -163,3 +163,5 @@ class UserProduct(Base):
     image_url = Column(String(512), nullable=True)
     last_used_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    owner = relationship("User")

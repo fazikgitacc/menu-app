@@ -191,10 +191,11 @@ class ProductSearchItem(BaseModel):
     carbohydrates: float = 0
     serving_size_g: Optional[float] = None
     image_url: Optional[str] = None
+    is_mine: bool = False
 
 
 class ProductOut(BaseModel):
-    """Сохранённый продукт из личного каталога, КБЖУ на 100 г."""
+    """Продукт из общего каталога «Продукты», КБЖУ на 100 г."""
     id: int
     barcode: Optional[str] = None
     name: str
@@ -205,6 +206,8 @@ class ProductOut(BaseModel):
     carbohydrates: float
     serving_size_g: Optional[float] = None
     image_url: Optional[str] = None
+    is_mine: bool = False
+    author: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

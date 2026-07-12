@@ -615,7 +615,7 @@ function openAddToMeal(mealType) {
     res.innerHTML = '';
     if (heading) res.insertAdjacentHTML('beforeend', `<p class="text-[11px] uppercase tracking-wider text-muted px-1 pb-1">${heading}</p>`);
     items.forEach((p) => {
-      const badge = p.source === 'catalog' ? `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">Мои</span>` : '';
+      const badge = p.source === 'catalog' ? (p.is_mine ? `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">Мои</span>` : `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-line/40 text-muted border border-line">База</span>`) : '';
       const b = h(`
         <button class="w-full flex items-center gap-3 p-2.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left">
           ${p.image_url ? `<img src="${esc(p.image_url)}" class="w-10 h-10 rounded-lg object-cover shrink-0" loading="lazy" />` : `<span class="w-10 h-10 rounded-lg bg-ink grid place-items-center text-muted shrink-0">${ICON.barcode}</span>`}
@@ -1095,21 +1095,27 @@ function productCard(p) {
 }
 
 function openProductActions(p) {
+  const owner = p.is_mine
+    ? `
+        <button data-do="edit" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition">${ICON.edit} Изменить КБЖУ</button>
+        <button data-do="del" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-[#5b2630] text-red-300 text-sm hover:bg-[#2a1518] transition">${ICON.trash} Удалить</button>`
+    : `<p class="text-xs text-muted text-center pt-1">${p.author ? 'Добавил: ' + esc(p.author) + ' · ' : ''}редактировать может только автор</p>`;
   const inner = `
     <div class="p-5 sm:p-6">
       <h2 class="text-base font-semibold mb-1 truncate">${esc(p.name)}</h2>
       <p class="text-sm text-muted mb-4">${fmt(p.calories)} ккал · Б ${fmt(p.proteins)} · Ж ${fmt(p.fats)} · У ${fmt(p.carbohydrates)} / 100 г</p>
       <div class="space-y-2">
         <button data-do="add" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-ink text-sm font-semibold hover:bg-[#eecb96] transition"><span class="w-4 h-4">${ICON.plus}</span> В дневник</button>
-        <button data-do="edit" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-line bg-card text-sm hover:border-accent/50 transition">${ICON.edit} Изменить КБЖУ</button>
-        <button data-do="del" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-[#5b2630] text-red-300 text-sm hover:bg-[#2a1518] transition">${ICON.trash} Удалить</button>
+        ${owner}
       </div>
     </div>`;
   const node = modalShell(inner);
   node.querySelector('[data-close]').addEventListener('click', closeModal);
   node.querySelector('[data-do="add"]').addEventListener('click', () => openProductPortion(p, null, todayStr()));
-  node.querySelector('[data-do="edit"]').addEventListener('click', () => openProductEdit(p));
-  node.querySelector('[data-do="del"]').addEventListener('click', async () => {
+  const editBtn = node.querySelector('[data-do="edit"]');
+  if (editBtn) editBtn.addEventListener('click', () => openProductEdit(p));
+  const delBtn = node.querySelector('[data-do="del"]');
+  if (delBtn) delBtn.addEventListener('click', async () => {
     try {
       await api(`/api/products/${p.id}`, { method: 'DELETE' });
       closeModal();
@@ -1290,7 +1296,7 @@ function openProductSearch(mealType) {
     if (heading) res.insertAdjacentHTML('beforeend', `<p class="text-[11px] uppercase tracking-wider text-muted px-1 pb-1">${heading}</p>`);
     items.forEach((p) => {
       const badge = p.source === 'catalog'
-        ? `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">Мои</span>` : '';
+        ? (p.is_mine ? `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">Мои</span>` : `<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-line/40 text-muted border border-line">База</span>`) : '';
       const b = h(`
         <button class="w-full flex items-center gap-3 p-2.5 rounded-xl border border-line bg-card hover:border-accent/50 transition text-left">
           ${p.image_url ? `<img src="${esc(p.image_url)}" class="w-10 h-10 rounded-lg object-cover shrink-0" loading="lazy" />` : `<span class="w-10 h-10 rounded-lg bg-ink grid place-items-center text-muted shrink-0">${ICON.barcode}</span>`}
@@ -2150,7 +2156,7 @@ function openAddModal(dish = null) {
     if (!items.length) { ingRes.innerHTML = `<p class="text-xs text-muted/70 px-1 py-2">Ничего не найдено</p>`; return; }
     ingRes.innerHTML = items.map((p, i) => `
       <button type="button" data-pick="${i}" class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-graphite border border-line hover:border-accent/50 transition text-left">
-        <span class="min-w-0"><span class="text-sm truncate block">${esc(p.name)}${p.source === 'catalog' ? ' <span class=\"text-[10px] text-accent\">Мои</span>' : ''}</span><span class="text-[11px] text-muted">${fmt(p.calories)} ккал·100г</span></span>
+        <span class="min-w-0"><span class="text-sm truncate block">${esc(p.name)}${p.source === 'catalog' ? (p.is_mine ? ' <span class=\"text-[10px] text-accent\">Мои</span>' : ' <span class=\"text-[10px] text-muted\">База</span>') : ''}</span><span class="text-[11px] text-muted">${fmt(p.calories)} ккал·100г</span></span>
         <span class="w-6 h-6 grid place-items-center rounded-full bg-accent/15 text-accent shrink-0">${ICON.plus}</span>
       </button>`).join('');
     ingRes.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {

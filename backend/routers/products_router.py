@@ -1,4 +1,4 @@
-"""Эндпоинты продуктов: поиск в OFF, штрих-код (с кэшем) и личный каталог «Продукты»."""
+"""Эндпоинты продуктов: поиск в OFF, штрих-код (с кэшем) и ОБЩИЙ каталог «Продукты»."""
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -14,6 +14,23 @@ from database import get_db
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
+def _dedup_products(rows, user_id):
+    """Схлопывает дубликаты общего каталога по штрих-коду/названию.
+
+    Из нескольких одинаковых продуктов оставляет один: предпочитаем продукт
+    текущего пользователя, иначе — самый свежий (rows уже отсортированы desc).
+    """
+    chosen: dict = {}
+    for p in rows:
+        key = ("bc:" + p.barcode) if p.barcode else ("nm:" + (p.name or "").strip().lower())
+        cur = chosen.get(key)
+        if cur is None:
+            chosen[key] = p
+        elif p.user_id == user_id and cur.user_id != user_id:
+            chosen[key] = p  # свой продукт вытесняет чужой
+    return list(chosen.values())
+
+
 # ----------------------------- Поиск в OFF --------------------------------
 
 @router.get("/search", response_model=list[schemas.ProductSearchItem])
@@ -27,25 +44,25 @@ async def search_products(
         return []
     ql = query.lower()
 
-    # 1) Личный каталог. Фильтруем в Python — корректная регистронезависимость
+    # 1) Общий каталог. Фильтруем в Python — корректная регистронезависимость
     #    для кириллицы (SQLite LIKE/lower() с не-ASCII не справляется).
     catalog = (
         db.query(models.UserProduct)
-        .filter(models.UserProduct.user_id == user.id)
         .order_by(models.UserProduct.last_used_at.desc())
         .all()
     )
-    local = [
+    matched = [
         p for p in catalog
         if ql in (p.name or "").lower() or ql in (p.brand or "").lower()
-    ][:20]
+    ]
+    local = _dedup_products(matched, user.id)[:20]
 
     items: list[schemas.ProductSearchItem] = [
         schemas.ProductSearchItem(
             source="catalog", id=p.id, barcode=p.barcode, name=p.name, brand=p.brand,
             calories=p.calories, proteins=p.proteins, fats=p.fats,
             carbohydrates=p.carbohydrates, serving_size_g=p.serving_size_g,
-            image_url=p.image_url,
+            image_url=p.image_url, is_mine=(p.user_id == user.id),
         )
         for p in local
     ]
@@ -85,10 +102,12 @@ async def product_by_barcode(
     if not code.isdigit():
         raise HTTPException(status_code=400, detail="Некорректный штрих-код")
 
-    # 1) Личный каталог — мгновенно и с правками пользователя.
+    # 1) Общий каталог — мгновенно и с правками пользователей. Предпочитаем свой.
     mine = (
         db.query(models.UserProduct)
-        .filter(models.UserProduct.user_id == user.id, models.UserProduct.barcode == code)
+        .filter(models.UserProduct.barcode == code)
+        .order_by((models.UserProduct.user_id == user.id).desc(),
+                  models.UserProduct.last_used_at.desc())
         .first()
     )
     if mine:
@@ -96,7 +115,7 @@ async def product_by_barcode(
             source="catalog", id=mine.id, barcode=mine.barcode, name=mine.name, brand=mine.brand,
             calories=mine.calories, proteins=mine.proteins, fats=mine.fats,
             carbohydrates=mine.carbohydrates, serving_size_g=mine.serving_size_g,
-            image_url=mine.image_url,
+            image_url=mine.image_url, is_mine=(mine.user_id == user.id),
         )
 
     # 2) Общий кэш OFF.
@@ -167,12 +186,17 @@ def list_products(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return (
+    rows = (
         db.query(models.UserProduct)
-        .filter(models.UserProduct.user_id == user.id)
         .order_by(models.UserProduct.last_used_at.desc())
         .all()
     )
+    result = _dedup_products(rows, user.id)
+    result.sort(key=lambda p: p.last_used_at, reverse=True)
+    for p in result:
+        p.is_mine = (p.user_id == user.id)
+        p.author = p.owner.username if p.owner else None
+    return result
 
 
 @router.post("", response_model=schemas.ProductOut)
