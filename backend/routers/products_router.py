@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 import models
 import off
+import base_foods
 import schemas
 import vision
 from auth import get_current_user
@@ -43,18 +44,21 @@ async def search_products(
     if len(query) < 2:
         return []
     ql = query.lower()
+    tokens = [t for t in ql.split() if t]
+
+    def hay_match(*fields) -> bool:
+        """Все слова запроса встречаются (в любом порядке) в объединённом тексте."""
+        hay = " ".join(f for f in fields if f).lower()
+        return all(tok in hay for tok in tokens)
 
     # 1) Общий каталог. Фильтруем в Python — корректная регистронезависимость
-    #    для кириллицы (SQLite LIKE/lower() с не-ASCII не справляется).
+    #    для кириллицы + учёт иного порядка слов (SQLite LIKE тут не помощник).
     catalog = (
         db.query(models.UserProduct)
         .order_by(models.UserProduct.last_used_at.desc())
         .all()
     )
-    matched = [
-        p for p in catalog
-        if ql in (p.name or "").lower() or ql in (p.brand or "").lower()
-    ]
+    matched = [p for p in catalog if hay_match(p.name or "", p.brand or "")]
     local = _dedup_products(matched, user.id)[:20]
 
     items: list[schemas.ProductSearchItem] = [
@@ -69,7 +73,19 @@ async def search_products(
     seen_barcodes = {p.barcode for p in local if p.barcode}
     seen_names = {(p.name or "").strip().lower() for p in local}
 
-    # 2) OFF. Если недоступен — не валим поиск, отдаём хотя бы локальные.
+    # 2) Встроенная база базовых продуктов (офлайн, всегда доступна).
+    for f in base_foods.search_base(query, limit=12):
+        nm = f["name"].strip().lower()
+        if nm in seen_names:
+            continue
+        seen_names.add(nm)
+        items.append(schemas.ProductSearchItem(
+            source="base", name=f["name"],
+            calories=f["calories"], proteins=f["proteins"],
+            fats=f["fats"], carbohydrates=f["carbohydrates"],
+        ))
+
+    # 3) OFF. Если недоступен — не валим поиск, отдаём хотя бы локальные и базу.
     try:
         off_results = await off.search(query, limit=20)
     except Exception:
