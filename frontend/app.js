@@ -450,6 +450,11 @@ function diaryView() {
       <div class="flex justify-between text-[10px] text-muted/60 mt-1.5 px-0.5">
         <span>0</span><span>шаг 50 мл</span><span>${fmt(waterMax)} мл</span>
       </div>
+      <div class="flex gap-2 mt-3">
+        <button data-water="250" class="flex-1 py-2 rounded-xl border border-line bg-ink text-sm hover:border-carb/50 transition">+250</button>
+        <button data-water="500" class="flex-1 py-2 rounded-xl border border-line bg-ink text-sm hover:border-carb/50 transition">+500</button>
+        <button data-water="-250" class="px-4 py-2 rounded-xl border border-line bg-ink text-sm text-muted hover:text-white transition">−250</button>
+      </div>
     </section>`;
 
   // Приёмы пищи
@@ -537,6 +542,8 @@ function wireDiary(root) {
     wr.addEventListener('input', () => { wl.textContent = fmt(Number(wr.value)); paintFill(); });
     wr.addEventListener('change', () => setWater(Number(wr.value)));
   }
+  root.querySelectorAll('[data-water]').forEach((b) =>
+    b.addEventListener('click', () => addWater(Number(b.getAttribute('data-water')))));
 }
 
 async function setWater(target) {
@@ -1205,6 +1212,7 @@ function openProductPortion(product, mealType = null, date = null) {
   const fieldCls = 'w-full bg-ink border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 transition';
   const mealBtns = MEALS.map((m) => `<button data-meal="${m.id}" class="py-2 rounded-lg text-xs font-medium transition">${m.label}</button>`).join('');
   const g0 = product.serving_size_g && product.serving_size_g > 0 ? product.serving_size_g : 100;
+  const pv = (x) => (x ? esc(String(x)) : '');   // ноль показываем как прозрачный плейсхолдер
 
   const inner = `
     <div class="p-5 sm:p-6 space-y-3 max-h-[85vh] overflow-y-auto no-scrollbar">
@@ -1217,11 +1225,11 @@ function openProductPortion(product, mealType = null, date = null) {
 
       <div class="rounded-2xl bg-card border border-line p-4">
         <div class="flex items-center justify-between mb-3"><p class="text-xs uppercase tracking-wider text-muted">КБЖУ на 100 г</p><span class="text-[11px] text-muted/70">правьте при неточности</span></div>
-        <div class="mb-3"><label class="text-xs text-muted mb-1 block">Калории</label><input id="pp-cal" inputmode="decimal" value="${esc(String(product.calories))}" class="${fieldCls}" /></div>
+        <div class="mb-3"><label class="text-xs text-muted mb-1 block">Калории</label><input id="pp-cal" inputmode="decimal" placeholder="0" value="${pv(product.calories)}" class="${fieldCls}" /></div>
         <div class="grid grid-cols-3 gap-2">
-          <div><label class="text-xs text-prot mb-1 block">Белки</label><input id="pp-prot" inputmode="decimal" value="${esc(String(product.proteins))}" class="${fieldCls}" /></div>
-          <div><label class="text-xs text-fat mb-1 block">Жиры</label><input id="pp-fat" inputmode="decimal" value="${esc(String(product.fats))}" class="${fieldCls}" /></div>
-          <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input id="pp-carb" inputmode="decimal" value="${esc(String(product.carbohydrates))}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-prot mb-1 block">Белки</label><input id="pp-prot" inputmode="decimal" placeholder="0" value="${pv(product.proteins)}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-fat mb-1 block">Жиры</label><input id="pp-fat" inputmode="decimal" placeholder="0" value="${pv(product.fats)}" class="${fieldCls}" /></div>
+          <div><label class="text-xs text-carb mb-1 block">Углеводы</label><input id="pp-carb" inputmode="decimal" placeholder="0" value="${pv(product.carbohydrates)}" class="${fieldCls}" /></div>
         </div>
       </div>
 
@@ -2196,20 +2204,36 @@ function openAddModal(dish = null) {
     }, 350);
   });
 
-  // Ручной ингредиент
+  // Ручной ингредиент: Б/Ж/У автоматически считает ккал/100 г
+  const imRecalc = () => {
+    node.querySelector('#im-cal').value = Math.round(
+      num(node.querySelector('#im-prot').value) * 4 +
+      num(node.querySelector('#im-fat').value) * 9 +
+      num(node.querySelector('#im-carb').value) * 4
+    );
+  };
+  ['#im-prot', '#im-fat', '#im-carb'].forEach((s) => node.querySelector(s).addEventListener('input', imRecalc));
+
   node.querySelector('#im-add').addEventListener('click', () => {
     const name = node.querySelector('#im-name').value.trim();
     if (!name) return toast('Введите название ингредиента', 'error');
-    addIngredient({
+    const ing = {
       name,
       grams: num(node.querySelector('#im-grams').value) || 100,
       calories: num(node.querySelector('#im-cal').value),
       proteins: num(node.querySelector('#im-prot').value),
       fats: num(node.querySelector('#im-fat').value),
       carbohydrates: num(node.querySelector('#im-carb').value),
-    });
+    };
+    addIngredient(ing);
+    // Сохраняем свой ингредиент в общий каталог продуктов (КБЖУ на 100 г).
+    api('/api/products', { method: 'POST', json: {
+      barcode: null, name: ing.name, brand: null,
+      calories: ing.calories, proteins: ing.proteins, fats: ing.fats,
+      carbohydrates: ing.carbohydrates, serving_size_g: null, image_url: null,
+    } }).then(() => { state.products = null; }).catch(() => {});
     ['#im-name', '#im-cal', '#im-prot', '#im-fat', '#im-carb', '#im-grams'].forEach((s) => { node.querySelector(s).value = ''; });
-    toast('Ингредиент добавлен', 'success');
+    toast('Ингредиент добавлен и сохранён в продукты', 'success');
   });
 
   // первичная отрисовка + разворачиваем аккордеон, если ингредиенты уже есть
